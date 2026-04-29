@@ -88,9 +88,10 @@ local tracker = {
     -- (ArkhamAsylum) gates on Cerrigar zone, doesn't fire from Temis,
     -- so WarMachine handles the entry itself.
     pit = {
-        start_time         = -1,
-        exit_trigger_time  = nil,
-        glyph_gizmo_seen   = false,
+        start_time          = -1,
+        exit_trigger_time   = nil,
+        glyph_gizmo_seen    = false,
+        glyph_interacted_at = nil,    -- when we first clicked the upgrade gizmo
         enter = {
             debounce_time = -1,
         },

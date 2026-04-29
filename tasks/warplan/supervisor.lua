@@ -34,6 +34,19 @@ local PLUGIN_FOR_ACTIVITY = {
     pit       = 'arkhamasylum',
 }
 
+local GLYPH_GIZMO_SKIN = 'Gizmo_Paragon_Glyph_Upgrade'
+
+-- True when the post-boss glyph upgrade gizmo is in stream. While this
+-- is true, supervisor must NOT enable ArkhamAsylum (post_boss task takes
+-- over: glyph upgrade + Next-Obj exit).
+local function glyph_gizmo_visible()
+    if not actors_manager then return false end
+    for _, a in pairs(actors_manager:get_all_actors()) do
+        if a:get_skin_name() == GLYPH_GIZMO_SKIN then return true end
+    end
+    return false
+end
+
 local function get_plugin(tag)
     if tag == 'sigilrunner'  then return SigilRunnerPlugin end
     if tag == 'helltide'     then return HelltideRevampedPlugin end
@@ -149,6 +162,17 @@ task.Execute = function ()
     end
 
     if in_activity_zone(zone, wp.activity) then
+        -- Pit-specific: once the boss is dead and the glyph upgrade gizmo
+        -- has appeared, do NOT keep ArkhamAsylum enabled — its kill_monster
+        -- task would chase trash and its exit_pit would tp to the wrong
+        -- town. tasks/pit/post_boss takes over from here.
+        if wp.activity == 'pit' and glyph_gizmo_visible() then
+            if tracker.warplan.active_sub_plugin then
+                enable_plugin(nil)
+            end
+            task.status = 'pit cleared (post_boss handles)'
+            return
+        end
         -- Hand off to the sub-plugin
         enable_plugin(target_tag)
         task.status = 'sub-plugin: ' .. target_tag

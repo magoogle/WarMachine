@@ -48,6 +48,11 @@ local task_files = {
     'warplan.enter_undercity',  -- Undercity Obelisk + Open Portal
     'pit.enter',                -- Iron Wolves Pit-key Crafter + open + portal
 
+    -- Pit post-boss: detects glyph upgrade gizmo, disables ArkhamAsylum,
+    -- walks to gizmo + interacts, fires Next-Obj exit. Must run BEFORE
+    -- supervisor so it claims the pulse before the sub-plugin is re-enabled.
+    'pit.post_boss',
+
     -- Sub-plugin orchestrator — enables the matching sub-plugin
     -- (SigilRunner / HelltideRevamped / WonderCity / ArkhamAsylum) when
     -- in the activity's runtime zone, disables on transition.
