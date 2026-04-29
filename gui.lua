@@ -38,7 +38,11 @@ gui.elements = {
     use_keybind    = cb(false, 'use_keybind'),
     keybind_toggle = keybind:new(0x0A, true, get_hash(plugin_label .. '_keybind_toggle')),
 
-    mode_select    = co(1, 'mode_select'),  -- default to War Plan
+    -- Hash key bumped (mode_select_v2) to invalidate any saved combo-box
+    -- state from the pre-orchestrator versions (mode used to range 0..6
+    -- with Hordes=5 / Pit=6 — those indices are out of range now and
+    -- crash the host's combo_box render).
+    mode_select    = co(1, 'mode_select_v2'),  -- default to War Plan
 
     -- War Plan automation toggles
     warplan_auto_tree            = tree_node:new(1),
