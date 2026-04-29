@@ -36,6 +36,11 @@ local function classify_zone(zone)
     if zone == 'Skov_Temis' then return 'temis' end
     if zone:match('^DGN_') then return 'dungeon' end
     if zone:match('^X1_Undercity_') then return 'undercity' end
+    if zone:match('^PIT_') then return 'pit' end
+    -- World name (not zone) for pit detection too — zone is always
+    -- 'PIT_Subzone' but world name varies (PIT_Ancients_Sand, etc).
+    -- Caller uses get_current_zone_name() so the world-based check
+    -- isn't applied here; we rely on the zone prefix above.
     return 'overworld'
 end
 
@@ -44,6 +49,7 @@ local function strict_zone_match(zone, activity)
     if activity == 'nightmare' then return zc == 'dungeon'   end
     if activity == 'undercity' then return zc == 'undercity' end
     if activity == 'helltide'  then return zc == 'overworld' end
+    if activity == 'pit'       then return zc == 'pit'       end
     return false
 end
 
@@ -115,11 +121,26 @@ end
 -- Helltide navigation
 -- ---------------------------------------------------------------------------
 
-local TORTURED_GIFT_MIN_CINDERS = 75    -- enough to open a tier-1 chest
+-- Build the list of patterns to seek based on user toggles + cinder count.
+-- Chests are gated by cinder threshold so we don't path to one we can't open.
+local function build_helltide_targets(cinders)
+    local s = settings.helltide or {}
+    local patterns = {}
 
--- Find closest interactable Helltide chest. Returns (actor, distance).
-local function find_closest_helltide_chest(player_pos)
-    return find_closest_interactable(player_pos, { 'Helltide_RewardChest' })
+    if s.auto_chests ~= false and cinders >= (s.min_cinders or 75) then
+        patterns[#patterns+1] = 'Helltide_RewardChest'
+    end
+    if s.pursue_props ~= false then
+        patterns[#patterns+1] = 'Hell_Prop_.*Clicky'
+        patterns[#patterns+1] = 'Hell_Prop_BreakableContainer'
+    end
+    if s.pursue_events ~= false then
+        patterns[#patterns+1] = 'S04_Helltide_FlamePillar_Switch'
+    end
+    -- Shrines and goblins are placeholders for now; settings stored but
+    -- not yet driving any seek pattern.
+
+    return patterns
 end
 
 local function helltide_step(now)
@@ -133,21 +154,23 @@ local function helltide_step(now)
         if ok then cinders = c or 0 end
     end
 
-    -- Seek a chest only when we have enough cinders to open one
-    if cinders >= TORTURED_GIFT_MIN_CINDERS then
-        local chest, dist = find_closest_helltide_chest(pp)
-        if chest and dist then
-            local r = pursue(chest, dist)
-            task.status = string.format('%s helltide chest (%.0fy, cinders %d)',
-                r == 'interact' and 'open' or 'walk to', dist, cinders)
+    local patterns = build_helltide_targets(cinders)
+    if #patterns > 0 then
+        local target, dist = find_closest_interactable(pp, patterns)
+        if target and dist then
+            local r = pursue(target, dist)
+            task.status = string.format('%s %s (%.0fy, cinders %d)',
+                r == 'interact' and 'interact' or 'walk to',
+                target:get_skin_name(), dist, cinders)
             return
         end
     end
 
-    -- No chest target — collect more cinders via auto-explore + rotation
+    -- No target available — explore + farm cinders
     autoexplore_step()
-    task.status = string.format('explore for cinders (%d/%d)',
-        cinders, TORTURED_GIFT_MIN_CINDERS)
+    local s = settings.helltide or {}
+    task.status = string.format('explore (cinders %d/%d)',
+        cinders, s.min_cinders or 75)
 end
 
 -- ---------------------------------------------------------------------------
@@ -229,6 +252,9 @@ local function activity_for_state()
     if settings.mode == mode.HELLTIDE and strict_zone_match(zone, 'helltide') then
         return 'helltide'
     end
+    if settings.mode == mode.PIT and strict_zone_match(zone, 'pit') then
+        return 'pit'
+    end
     return nil
 end
 
@@ -254,6 +280,16 @@ task.Execute = function ()
         undercity_step(now)
     elseif activity == 'nightmare' then
         nightmare_step(now)
+    elseif activity == 'pit' then
+        -- Pit: auto-explore. Glyph gizmo + boss kill detected by tasks/pit/exit.
+        -- Stamp start_time on first entry if not already set (handles cases
+        -- where the player entered the pit manually without going through
+        -- tasks/pit/enter).
+        if (tracker.pit.start_time or -1) <= 0 then
+            tracker.pit.start_time = now
+        end
+        autoexplore_step()
+        task.status = 'auto-explore (pit)'
     else
         autoexplore_step()
         task.status = 'auto-explore (' .. tostring(activity) .. ')'

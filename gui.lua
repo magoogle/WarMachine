@@ -31,7 +31,10 @@ gui.modes = {
     'Undercity',
     'War Plan',
     'Hordes',
+    'Pit',
 }
+
+gui.pit_exit_modes = { 'Reset Dungeons', 'Teleport to Cerrigar' }
 
 gui.sigil_tier_list = { 'Any', 'Common', 'Magic', 'Rare', 'Legendary' }
 
@@ -59,6 +62,22 @@ gui.elements = {
     nmd_max_tier       = co(4,     'nmd_max_tier'),
     nmd_map_x          = si(0, 3840, 0, 'nmd_map_x'),
     nmd_map_y          = si(0, 2160, 0, 'nmd_map_y'),
+
+    -- Helltide settings
+    helltide_auto_chests   = cb(true, 'helltide_auto_chests'),
+    helltide_min_cinders   = si(50, 300, 75, 'helltide_min_cinders'),
+    helltide_pursue_props  = cb(true, 'helltide_pursue_props'),
+    helltide_pursue_events = cb(true, 'helltide_pursue_events'),
+    helltide_use_shrines   = cb(true, 'helltide_use_shrines'),
+    helltide_chase_goblins = cb(true, 'helltide_chase_goblins'),
+
+    -- Pit settings
+    pit_tree            = tree_node:new(1),
+    pit_auto_enter      = cb(true,  'pit_auto_enter'),
+    pit_level           = si(1, 150, 1, 'pit_level'),
+    pit_reset_timeout   = si(60, 1800, 600, 'pit_reset_timeout'),
+    pit_exit_mode       = co(1, 'pit_exit_mode'),  -- 0=reset, 1=tp to Cerrigar
+    pit_interact_shrine = cb(true, 'pit_interact_shrine'),
 
     -- War Plan automation toggles (Phase 5)
     warplan_auto_tree            = tree_node:new(1),
@@ -121,7 +140,7 @@ gui.elements = {
     warplan_cp_confirm_x = si(0, 3840, 0, 'warplan_cp_confirm_x'),
     warplan_cp_confirm_y = si(0, 2160, 0, 'warplan_cp_confirm_y'),
 
-    -- Undercity entry click points (Aubrie tribute UI -> Open Portal button)
+    -- Undercity entry click points (Undercity Obelisk tribute UI -> Open Portal button)
     undercity_auto_enter   = cb(true, 'undercity_auto_enter'),
     undercity_cp_open_portal_x = si(0, 3840, 0, 'undercity_cp_open_portal_x'),
     undercity_cp_open_portal_y = si(0, 2160, 0, 'undercity_cp_open_portal_y'),
@@ -153,7 +172,22 @@ gui.render = function ()
 
     -- Activity sections — collapsed placeholders for now
     if gui.elements.helltide_tree:push('Helltide settings') then
-        render_menu_header('[Phase 2] Helltide settings will be ported here.')
+        render_menu_header('Standalone Helltide mode + War Plan helltide leg. Bot auto-explores until it can interact with helltide objectives based on the toggles below.')
+
+        gui.elements.helltide_auto_chests:render('Auto open Tortured Gifts',
+            'When cinders >= threshold, walk to the nearest Helltide_RewardChest_* and open it.')
+        gui.elements.helltide_min_cinders:render('Min cinders to open chest',
+            'Wait until cinders are at least this value before pursuing a chest. 75 = lowest-tier chest, 175 = mystery chest tier, 250 = uber chest.')
+
+        render_menu_header('Pursuit toggles — what else the bot should walk to in helltide:')
+        gui.elements.helltide_pursue_props:render('Pursue cinder props',
+            'Hell_Prop_*Clicky and BreakableContainer entities — give bonus cinders when interacted/destroyed.')
+        gui.elements.helltide_pursue_events:render('Pursue events',
+            'Flame Pillar (S04_Helltide_FlamePillar_Switch_Dyn) and similar event triggers.')
+        gui.elements.helltide_use_shrines:render('Use shrines',
+            'Shrine_DRLG when encountered. (Wired in later phases.)')
+        gui.elements.helltide_chase_goblins:render('Chase goblins',
+            'Treasure Goblin pursuit. (Wired in later phases.)')
         gui.elements.helltide_tree:pop()
     end
 
@@ -174,14 +208,29 @@ gui.render = function ()
     end
 
     if gui.elements.undercity_tree:push('Undercity settings') then
-        render_menu_header('Default flow: walk to Aubrie -> click Open Portal -> walk into portal. Set the Open Portal click point so the bot can dispatch the portal automatically when in Temis with an active Undercity war plan.')
+        render_menu_header('Default flow: walk to the Undercity Obelisk in Temis -> click Open Portal -> walk into portal. Set the Open Portal click point so the bot can dispatch the portal automatically when in Temis with an active Undercity war plan.')
         gui.elements.undercity_auto_enter:render('Auto-enter Undercity',
-            'When in Temis with an active Undercity war plan, walk to Aubrie + click Open Portal automatically.')
+            'When in Temis with an active Undercity war plan, walk to the Undercity Obelisk + click Open Portal automatically.')
         gui.elements.undercity_cp_open_portal_x:render('Open Portal X',
-            'Screen X for the "Open Portal" button on Aubrie\'s tribute menu (silver crosshair when Show points is on)')
+            'Screen X for the "Open Portal" button on the Undercity Obelisk tribute menu (brown crosshair when Show points is on)')
         gui.elements.undercity_cp_open_portal_y:render('Open Portal Y',
             'Screen Y for the "Open Portal" button')
         gui.elements.undercity_tree:pop()
+    end
+
+    if gui.elements.pit_tree:push('Pit settings') then
+        render_menu_header('Standalone Pit mode: bot teleports to Cerrigar, walks to the Iron Wolves Pit-key Crafter, opens the configured pit level, walks into the portal, runs the pit, exits when boss-cleared / glyph gizmo appears / timeout.')
+        gui.elements.pit_auto_enter:render('Auto-enter Pit',
+            'When in Cerrigar in Pit mode, automatically open + enter the configured pit.')
+        gui.elements.pit_level:render('Pit level',
+            'Pit difficulty level (1..150). Higher = tougher, better rewards.')
+        gui.elements.pit_reset_timeout:render('Reset timeout (s)',
+            'Force-exit the pit after this many seconds if not yet completed.')
+        gui.elements.pit_exit_mode:render('Exit mode', gui.pit_exit_modes,
+            'On exit: Reset Dungeons (re-enter same pit) OR Teleport to Cerrigar.')
+        gui.elements.pit_interact_shrine:render('Use shrines',
+            'Interact with shrines encountered inside the pit.')
+        gui.elements.pit_tree:pop()
     end
 
     if gui.elements.hordes_tree:push('Hordes settings') then

@@ -51,9 +51,14 @@ local task_files = {
     'warplan.start_cycle',      -- walk to Warplans_Vendor + interact
 
     -- Self-triggering entry tasks (in town, mode-dependent)
-    'warplan.enter_undercity',  -- Aubrie + Open Portal (WarPlan UC OR standalone UC)
+    'warplan.enter_undercity',  -- Undercity Obelisk + Open Portal (WarPlan UC OR standalone UC)
     'nmd.use_sigil',            -- consume sigil + map-click (standalone NMD)
     'nmd.enter_portal',         -- walk into NMD entrance portal once it spawns
+
+    -- Pit tasks (standalone Pit mode)
+    'pit.exit',                 -- triggered first — exit conditions take priority over entry
+    'pit.teleport_cerrigar',    -- tp to Cerrigar if not there + not in pit
+    'pit.enter',                -- walk to Pit-key Crafter, open + enter portal
 
     -- Hordes stub (data discovery TBD)
     'hordes.dispatch',

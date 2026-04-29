@@ -18,6 +18,7 @@ local settings = {
     nmd       = {},
     undercity = {},
     warplan   = {},
+    pit       = {},
 }
 
 -- Returns true when the keybind is held / not in use.
@@ -93,6 +94,22 @@ settings.update_settings = function ()
         y = gui.elements.nmd_map_y:get(),
         label = 'Map NMD',
     }
+
+    -- Helltide
+    settings.helltide.auto_chests   = gui.elements.helltide_auto_chests:get()
+    settings.helltide.min_cinders   = gui.elements.helltide_min_cinders:get()
+    settings.helltide.pursue_props  = gui.elements.helltide_pursue_props:get()
+    settings.helltide.pursue_events = gui.elements.helltide_pursue_events:get()
+    settings.helltide.use_shrines   = gui.elements.helltide_use_shrines:get()
+    settings.helltide.chase_goblins = gui.elements.helltide_chase_goblins:get()
+
+    -- Pit
+    settings.pit = settings.pit or {}
+    settings.pit.auto_enter      = gui.elements.pit_auto_enter:get()
+    settings.pit.level           = gui.elements.pit_level:get()
+    settings.pit.reset_timeout   = gui.elements.pit_reset_timeout:get()
+    settings.pit.exit_mode       = gui.elements.pit_exit_mode:get()    -- 0=reset, 1=tp Cerrigar
+    settings.pit.interact_shrine = gui.elements.pit_interact_shrine:get()
 end
 
 return settings

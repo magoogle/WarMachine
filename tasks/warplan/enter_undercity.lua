@@ -12,8 +12,10 @@
 --   2. Tribute UI open (loot_manager.is_in_vendor_screen() == true)
 --      → click "Open Portal" coords every ~1s until the portal spawns.
 --
---   3. Neither portal nor tribute UI → interact_object(Aubrie) every ~2s.
---      D4 walks the player to her and opens the tribute menu.
+--   3. Neither portal nor tribute UI → interact_object(Undercity Obelisk)
+--      every ~2s. D4 walks the player to it and opens the tribute menu.
+--      (Internal skin name is Aubrie_Test_Undercity_Crafter — leftover dev
+--       naming; players know it as the Undercity Obelisk in Temis.)
 --
 -- Aborts with a 30s total timeout if nothing progresses.
 -- ---------------------------------------------------------------------------
@@ -23,11 +25,13 @@ local tracker  = require 'core.tracker'
 local mode     = require 'core.mode'
 local interact = require 'core.interact'
 
-local AUBRIE_SKIN  = 'Aubrie_Test_Undercity_Crafter'
+-- Internal skin name for the Undercity Obelisk in Temis.
+-- (The "Aubrie_Test_..." prefix is leftover dev naming.)
+local OBELISK_SKIN = 'Aubrie_Test_Undercity_Crafter'
 local PORTAL_SKIN  = 'Portal_Dungeon_Undercity'
 
 local INTERACT_RANGE      = 30.0
-local AUBRIE_RETRY_S      = 2.0
+local OBELISK_RETRY_S     = 2.0
 local OPEN_PORTAL_RETRY_S = 1.5     -- click Open Portal every N seconds
 local ENTER_DELAY_S       = 0.50    -- send Enter this long after each Open Portal click
 local TOTAL_TIMEOUT_S     = 30.0
@@ -157,25 +161,25 @@ task.Execute = function ()
         return
     end
 
-    -- 3. No portal, no tribute UI → interact with Aubrie.
-    local aubrie = interact.find_by_skin(AUBRIE_SKIN, true)
-    if not aubrie then
-        console.print('[WarMachine] enter_undercity: Aubrie not in stream — walk closer in Temis')
-        task.status = 'Aubrie out of stream'
+    -- 3. No portal, no tribute UI → interact with the Undercity Obelisk.
+    local obelisk = interact.find_by_skin(OBELISK_SKIN, true)
+    if not obelisk then
+        console.print('[WarMachine] enter_undercity: Undercity Obelisk not in stream — walk closer in Temis')
+        task.status = 'Undercity Obelisk out of stream'
         return
     end
 
-    if now - state.last_interact_at >= AUBRIE_RETRY_S then
-        local r = interact.walk_and_interact(aubrie, INTERACT_RANGE)
+    if now - state.last_interact_at >= OBELISK_RETRY_S then
+        local r = interact.walk_and_interact(obelisk, INTERACT_RANGE)
         if r == 'too_far' then
-            local d = interact.distance(get_local_player(), aubrie)
-            console.print(string.format('[WarMachine] enter_undercity: Aubrie %.1fy away — aborting', d))
+            local d = interact.distance(get_local_player(), obelisk)
+            console.print(string.format('[WarMachine] enter_undercity: Undercity Obelisk %.1fy away — aborting', d))
             reset_pending(state)
             task.status = nil
             return
         end
         state.last_interact_at = now
-        task.status = 'click Aubrie (waiting for tribute UI)'
+        task.status = 'click Undercity Obelisk (waiting for tribute UI)'
     else
         task.status = 'waiting for tribute UI'
     end

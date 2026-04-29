@@ -11,6 +11,7 @@ mode.NIGHTMARE = 2
 mode.UNDERCITY = 3
 mode.WARPLAN   = 4
 mode.HORDES    = 5
+mode.PIT       = 6
 
 mode.labels = {
     [0] = 'Idle',
@@ -19,6 +20,7 @@ mode.labels = {
     [3] = 'Undercity',
     [4] = 'War Plan',
     [5] = 'Hordes',
+    [6] = 'Pit',
 }
 
 mode.label = function (m)

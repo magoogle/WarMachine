@@ -106,6 +106,16 @@ local tracker = {
             need_sigils       = false,   -- true when no usable sigils found
         },
     },
+    pit = {
+        -- In-pit run state
+        start_time         = -1,    -- when we entered the pit
+        exit_trigger_time  = nil,   -- when exit conditions first met
+        glyph_gizmo_seen   = false, -- once Gizmo_Paragon_Glyph_Upgrade has been streamed in
+        -- Entry retry state
+        enter = {
+            debounce_time = -1,
+        },
+    },
 
     -- Bot-level halt: any task can flip this to true to stop the entire run.
     bot_done  = false,
