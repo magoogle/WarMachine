@@ -34,8 +34,9 @@ local _logged_dep_warning = false
 
 settings.update_settings = function ()
     local toggle_state  = gui.elements.main_toggle:get()
-    settings.mode       = gui.elements.mode_select:get()
     settings.debug_mode = gui.elements.debug_mode:get()
+    -- settings.mode stays at its initial default (1 = War Plan). The
+    -- combo dropdown was removed; WarMachine is War Plan only.
 
     -- Gate enable on all sub-plugins being present. Force off otherwise.
     if toggle_state and not gui.has_all_dependencies() then

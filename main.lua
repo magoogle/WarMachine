@@ -18,7 +18,6 @@ local gui            = require 'gui'
 local settings       = require 'core.settings'
 local task_manager   = require 'core.task_manager'
 local external       = require 'core.external'
-local mode           = require 'core.mode'
 local tracker        = require 'core.tracker'
 local warplan_state  = require 'core.warplan_state'
 
@@ -51,14 +50,6 @@ local main_pulse = function ()
         if settings.debug_mode then
             console.print('[WarMachine] Zone -> ' .. tostring(zone))
         end
-    end
-
-    -- Track mode transitions.
-    if settings.mode ~= tracker.last_mode then
-        if settings.debug_mode then
-            console.print('[WarMachine] Mode -> ' .. mode.label(settings.mode))
-        end
-        tracker.last_mode = settings.mode
     end
 
     -- Refresh War Plan state every pulse -- quest API is cheap to read.
@@ -159,9 +150,8 @@ local render_pulse = function ()
     end
 
     local msg = string.format(
-        'WarMachine v%s | Mode: %s | Task: %s',
+        'WarMachine v%s | Task: %s',
         settings.plugin_version,
-        mode.label(settings.mode),
         task_str
     )
     local x = get_screen_width() / 2 - (#msg * 5.5)

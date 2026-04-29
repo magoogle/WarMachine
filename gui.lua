@@ -58,9 +58,6 @@ local function btn(key)
     return button:new(get_hash(plugin_label .. '_' .. key))
 end
 
--- Mode list (combo-box index)
-gui.modes = { 'Idle', 'War Plan' }
-
 gui.plugin_label   = plugin_label
 gui.plugin_version = plugin_version
 
@@ -69,12 +66,6 @@ gui.elements = {
     main_toggle    = cb(false, 'main_toggle'),
     use_keybind    = cb(false, 'use_keybind'),
     keybind_toggle = keybind:new(0x0A, true, get_hash(plugin_label .. '_keybind_toggle')),
-
-    -- Hash key bumped (mode_select_v2) to invalidate any saved combo-box
-    -- state from the pre-orchestrator versions (mode used to range 0..6
-    -- with Hordes=5 / Pit=6 -- those indices are out of range now and
-    -- crash the host's combo_box render).
-    mode_select    = co(1, 'mode_select_v2'),  -- default to War Plan
 
     -- War Plan automation toggles
     warplan_auto_tree   = tree_node:new(1),
@@ -168,11 +159,6 @@ gui.render = function ()
     if gui.elements.use_keybind:get() then
         gui.elements.keybind_toggle:render('Toggle Keybind', 'Toggle the bot on/off')
     end
-
-    gui.elements.mode_select:render(
-        'Mode', gui.modes,
-        'Idle = no-op. War Plan = run the war plan cycle (vendor menu + tp between activities + sub-plugin handoff + turn-in).'
-    )
 
     render_menu_header('WarMachine is the war-plan ORCHESTRATOR. It does not run activities directly -- it enables the matching sub-plugin (SigilRunner / HelltideRevamped / WonderCity / ArkhamAsylum) when each activity is active in the war plan, then disables it on completion. Each sub-plugin must be installed AND have its own main_toggle ON for orchestration to work.')
 
