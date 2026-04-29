@@ -20,6 +20,7 @@ local settings = require 'core.settings'
 local tracker  = require 'core.tracker'
 local mode     = require 'core.mode'
 
+local CRAFTER_SKIN   = 'TWN_Kehj_IronWolves_PitKey_Crafter'
 local RETRY_COOLDOWN = 12.0   -- seconds between travel triggers
 
 local task = { name = 'pit_travel_to_hub', status = nil }
@@ -36,11 +37,26 @@ local function in_pit()
     return n ~= nil and n:match('^PIT_') ~= nil
 end
 
+-- True when the Iron Wolves Pit-key Crafter is in our actor stream.
+-- This is the most reliable "I'm at the hub" signal — works regardless
+-- of how the zone name is reported.
+local function crafter_in_stream()
+    if not actors_manager then return false end
+    for _, a in pairs(actors_manager:get_all_actors()) do
+        if a:get_skin_name() == CRAFTER_SKIN then return true end
+    end
+    return false
+end
+
 task.shouldExecute = function ()
     if settings.mode ~= mode.PIT then return false end
     if not (settings.pit and settings.pit.auto_travel) then return false end
     if in_pit() then return false end
     if in_pit_hub() then return false end
+    -- Defensive: even if zone reports something other than 'Skov_Temis'
+    -- (sub-zone, future patch rename, etc.), don't teleport if we can
+    -- already see the Pit-key Crafter — entry task can interact directly.
+    if crafter_in_stream() then return false end
 
     -- Don't fire while a Next-Obj sequence is already in flight (we
     -- triggered one earlier and it's still working through Tab + click + verify).

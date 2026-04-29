@@ -55,11 +55,25 @@ local function menu_open()
     return ok and ret == true
 end
 
+-- True when the Pit-key Crafter is in our actor stream. This is what
+-- actually matters — if we can see + interact with the crafter, we're
+-- close enough to start the pit, regardless of how the zone is named.
+local function crafter_in_stream()
+    if not actors_manager then return false end
+    for _, a in pairs(actors_manager:get_all_actors()) do
+        if a:get_skin_name() == CRAFTER_SKIN then return true end
+    end
+    return false
+end
+
 task.shouldExecute = function ()
     if settings.mode ~= mode.PIT then return false end
     if not (settings.pit and settings.pit.auto_enter) then return false end
     if in_pit() then return false end
-    if not in_pit_hub() then return false end
+    -- Fire whenever we're either in the named Pit hub OR the crafter is
+    -- already in stream (handles zone-name variants, sub-zones, manual
+    -- positioning).
+    if not (in_pit_hub() or crafter_in_stream()) then return false end
     return true
 end
 
