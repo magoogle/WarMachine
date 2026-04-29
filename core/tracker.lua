@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- WarMachine tracker — orchestrator only.
+-- WarMachine tracker -- orchestrator only.
 -- ---------------------------------------------------------------------------
 
 local tracker = {
@@ -9,7 +9,7 @@ local tracker = {
     bot_done            = false,
 
     warplan = {
-        -- Cached read of warplan_state.read() — refreshed each pulse
+        -- Cached read of warplan_state.read() -- refreshed each pulse
         snapshot = nil,
 
         -- Tracks active warplan transitions (used for sub-plugin handoff +

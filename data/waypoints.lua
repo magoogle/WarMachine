@@ -5,7 +5,7 @@
 -- Populated from Reaper/data/enums.lua (35 known waypoints) plus the
 -- helltide-region IDs from HelltideRevamped/data/enums.lua.
 --
--- NOTE: Skov_Temis (S07 expansion town) is NOT in this list yet — it was
+-- NOTE: Skov_Temis (S07 expansion town) is NOT in this list yet -- it was
 -- added after these tables were compiled. Use the map-click teleport
 -- (Tab + Next-Obj button) for any destination not listed here.
 --
@@ -65,7 +65,7 @@ local waypoints = {
     },
 }
 
--- Convenience lookup: zone-name-prefix → helltide region descriptor.
+-- Convenience lookup: zone-name-prefix -> helltide region descriptor.
 -- Use to detect "which helltide am I in" by zone-name prefix.
 waypoints.helltide_region_by_prefix = {}
 for _, row in pairs(waypoints.helltide_regions) do

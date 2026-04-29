@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- War Plan Next-Objective map-click — sequence with poll-style verify.
+-- War Plan Next-Objective map-click -- sequence with poll-style verify.
 --
 -- Sequence:  Tab (open map) -> wait -> click configured Next-Obj coords ->
 --            poll for zone-change OR position-jump up to MAX_VERIFY_S
@@ -9,11 +9,10 @@
 -- can declare "no-op" before the actual teleport happens.
 --
 -- Success signals (either one):
---   • zone name changed                    — cross-zone tp (Skov_Temis -> DGN_*)
---   • player position jumped > 100 yards   — in-zone tp (e.g. boss room cell)
+--   * zone name changed                    -- cross-zone tp (Skov_Temis -> DGN_*)
+--   * player position jumped > 100 yards   -- in-zone tp (e.g. boss room cell)
 -- ---------------------------------------------------------------------------
 
-local gui      = require 'gui'
 local settings = require 'core.settings'
 local tracker  = require 'core.tracker'
 
@@ -47,33 +46,16 @@ local function current_zone()
     return w and w:get_current_zone_name() or nil
 end
 
+-- Fires when the dispatch task (or pit/post_boss) sets tracker.warplan.next_obj.pending.
 task.shouldExecute = function ()
-    local state = tracker.warplan.next_obj
-
-    if gui.elements.warplan_test_next_obj:get() and not state.pending then
-        local lp = get_local_player()
-        local pos = lp and lp:get_position() or nil
-        state.pending           = true
-        state.step              = STEP_OPEN_MAP
-        state.timer             = get_time_since_inject()
-        state.verify_started_at = nil
-        state.baseline_zone     = current_zone()
-        state.baseline_pos_x    = pos and pos:x() or nil
-        state.baseline_pos_y    = pos and pos:y() or nil
-        state.result            = nil
-        console.print(string.format('[WarMachine] Next-Obj test started — baseline zone=%s pos=(%.1f, %.1f)',
-            tostring(state.baseline_zone),
-            state.baseline_pos_x or 0, state.baseline_pos_y or 0))
-    end
-
-    return state.pending
+    return tracker.warplan.next_obj.pending == true
 end
 
 task.Execute = function ()
     local state = tracker.warplan.next_obj
     local cps   = settings.warplan and settings.warplan.click_points
     if not cps or not cps.next_objective then
-        console.print('[WarMachine] Next-Obj coords missing — aborting test')
+        console.print('[WarMachine] Next-Obj coords missing -- aborting test')
         state.result = 'failed'
         reset(state)
         return
@@ -109,7 +91,7 @@ task.Execute = function ()
         -- Check zone change
         local cur_zone = current_zone()
         if cur_zone ~= state.baseline_zone then
-            console.print(string.format('[WarMachine] Next-Obj SUCCESS — zone %s -> %s',
+            console.print(string.format('[WarMachine] Next-Obj SUCCESS -- zone %s -> %s',
                 tostring(state.baseline_zone), tostring(cur_zone)))
             state.result = 'success'
             reset(state)
@@ -118,7 +100,7 @@ task.Execute = function ()
         end
 
         -- Check in-zone position jump (e.g. teleport to a different cell
-        -- within the same zone — happens with NMD boss rooms)
+        -- within the same zone -- happens with NMD boss rooms)
         local lp  = get_local_player()
         local pos = lp and lp:get_position() or nil
         if pos and state.baseline_pos_x and state.baseline_pos_y then
@@ -126,7 +108,7 @@ task.Execute = function ()
             local dy = pos:y() - state.baseline_pos_y
             local jump = math.sqrt(dx*dx + dy*dy)
             if jump >= POS_JUMP_Y then
-                console.print(string.format('[WarMachine] Next-Obj SUCCESS — in-zone tp (jump %.0fy)', jump))
+                console.print(string.format('[WarMachine] Next-Obj SUCCESS -- in-zone tp (jump %.0fy)', jump))
                 state.result = 'success'
                 reset(state)
                 task.status = nil
@@ -140,8 +122,8 @@ task.Execute = function ()
             return
         end
 
-        -- Timed out — no zone or position change
-        console.print(string.format('[WarMachine] Next-Obj no-op — zone unchanged (%s) after %.0fs',
+        -- Timed out -- no zone or position change
+        console.print(string.format('[WarMachine] Next-Obj no-op -- zone unchanged (%s) after %.0fs',
             tostring(cur_zone), MAX_VERIFY_S))
         state.result = 'no_zone_change'
         reset(state)

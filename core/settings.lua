@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- WarMachine settings — orchestrator only.
+-- WarMachine settings -- orchestrator only.
 -- Sub-plugin settings (sigil tier, helltide chests, pit level, etc.) live
 -- in their respective sub-plugin GUIs, not here.
 -- ---------------------------------------------------------------------------

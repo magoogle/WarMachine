@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- War Plan state — pure read of the live quest API.
+-- War Plan state -- pure read of the live quest API.
 --
 -- Exposes:
 --   warplan_state.read()  -> { active = bool, quest = {...}, activity = string|nil }
@@ -10,7 +10,7 @@
 -- Detection rule:
 --   Iterate get_quests(); the first quest whose name starts with
 --   'WarPlans_QST_' is the active War Plan. (We've never seen more than one
---   active concurrently.)  If none found → no active war plan.
+--   active concurrently.)  If none found -> no active war plan.
 --
 -- Sigil inventory helper:
 --   warplan_state.usable_sigils()  -> filtered list of items where
@@ -27,8 +27,8 @@ local BOUNTY_HELLTIDE_PREFIX = 'Bounty_Helltide_'
 -- Objective text helpers.
 --
 -- Quest objective text from the host carries inline format codes:
---   {icon:Helltide_Currency, 2.5}      → drop entirely
---   {c:ff00ff00}1/3{/c}                → strip the wrapper, keep "1/3"
+--   {icon:Helltide_Currency, 2.5}      -> drop entirely
+--   {c:ff00ff00}1/3{/c}                -> strip the wrapper, keep "1/3"
 -- ---------------------------------------------------------------------------
 local function strip_format_codes(s)
     if type(s) ~= 'string' then return s end
@@ -143,7 +143,7 @@ warplan_state.read = function ()
         end
     end
 
-    -- Pass 2: Bounty_Helltide_* (concurrent helltide bounties — useful for
+    -- Pass 2: Bounty_Helltide_* (concurrent helltide bounties -- useful for
     -- helltide path-priority decisions)
     for _, q in ipairs(quests) do
         local name = q:get_name()
@@ -162,8 +162,8 @@ end
 -- Returns inventory items grouped by activity, filtered by stack_count > 0.
 -- Used by the standalone "Nightmare" / "Undercity" modes.
 -- Skin-name patterns:
---   Item_Nightmare_Sigil_*     → nightmare
---   Item_Undercity_Tribute_*   → undercity
+--   Item_Nightmare_Sigil_*     -> nightmare
+--   Item_Undercity_Tribute_*   -> undercity
 warplan_state.usable_sigils = function ()
     local lp = get_local_player()
     if not lp then return { nightmare = {}, undercity = {}, total = 0 } end

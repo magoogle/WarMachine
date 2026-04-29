@@ -51,21 +51,21 @@ task.Execute = function ()
     local gizmo = find_glyph_gizmo()
 
     if gizmo then
-        -- First time we see it — mark and let ArkhamAsylum's upgrade_glyph
+        -- First time we see it -- mark and let ArkhamAsylum's upgrade_glyph
         -- task take care of the interaction + UI clicks.
         if not state.glyph_gizmo_seen then
             state.glyph_gizmo_seen = true
-            console.print('[WarMachine] pit: glyph gizmo appeared — ArkhamAsylum handles upgrade')
+            console.print('[WarMachine] pit: glyph gizmo appeared -- ArkhamAsylum handles upgrade')
         end
         task.status = 'glyph upgrade (sub-plugin)'
         return
     end
 
-    -- Gizmo is gone AND we saw it earlier → upgrade complete.
+    -- Gizmo is gone AND we saw it earlier -> upgrade complete.
     -- Take over: disable sub-plugin, kill Batmobile drift, fire Next-Obj.
     if tracker.warplan.active_sub_plugin then
         if ArkhamAsylumPlugin and ArkhamAsylumPlugin.disable then
-            console.print('[WarMachine] pit: glyph upgrade complete — disabling ArkhamAsylum')
+            console.print('[WarMachine] pit: glyph upgrade complete -- disabling ArkhamAsylum')
             ArkhamAsylumPlugin.disable()
         end
         tracker.warplan.active_sub_plugin = nil

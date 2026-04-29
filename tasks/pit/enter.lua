@@ -56,7 +56,7 @@ local function menu_open()
 end
 
 -- True when the Pit-key Crafter is in our actor stream. This is what
--- actually matters — if we can see + interact with the crafter, we're
+-- actually matters -- if we can see + interact with the crafter, we're
 -- close enough to start the pit, regardless of how the zone is named.
 local function crafter_in_stream()
     if not actors_manager then return false end
@@ -117,7 +117,7 @@ task.Execute = function ()
         return
     end
 
-    -- 3. No portal, no menu → interact with the Pit-key Crafter NPC.
+    -- 3. No portal, no menu -> interact with the Pit-key Crafter NPC.
     local crafter = interact.find_by_skin(CRAFTER_SKIN, true)
     if not crafter then
         task.status = 'Pit-key Crafter not in stream'

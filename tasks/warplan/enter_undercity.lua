@@ -6,15 +6,15 @@
 --
 -- Three-stage state machine, polled every pulse (idempotent calls):
 --
---   1. Portal exists + interactable → interact_object(portal). D4 walks us
+--   1. Portal exists + interactable -> interact_object(portal). D4 walks us
 --      in. Once zone changes to X1_Undercity_*, this task no longer fires.
 --
 --   2. Tribute UI open (loot_manager.is_in_vendor_screen() == true)
---      → click "Open Portal" coords every ~1s until the portal spawns.
+--      -> click "Open Portal" coords every ~1s until the portal spawns.
 --
---   3. Neither portal nor tribute UI → interact_object(Undercity Obelisk)
+--   3. Neither portal nor tribute UI -> interact_object(Undercity Obelisk)
 --      every ~2s. D4 walks the player to it and opens the tribute menu.
---      (Internal skin name is Aubrie_Test_Undercity_Crafter — leftover dev
+--      (Internal skin name is Aubrie_Test_Undercity_Crafter -- leftover dev
 --       naming; players know it as the Undercity Obelisk in Temis.)
 --
 -- Aborts with a 30s total timeout if nothing progresses.
@@ -81,7 +81,7 @@ task.shouldExecute = function ()
                     should_fire = false
                 end
             elseif settings.mode == mode.UNDERCITY then
-                -- Standalone — fire whenever we're in Temis. The dungeon
+                -- Standalone -- fire whenever we're in Temis. The dungeon
                 -- consumes a tribute key automatically when the portal opens.
                 -- (No tribute-key check yet; if user runs UC mode without
                 -- keys the portal-open click will simply fail.)
@@ -113,7 +113,7 @@ task.Execute = function ()
 
     -- Total timeout
     if state.first_attempt_at and now - state.first_attempt_at > TOTAL_TIMEOUT_S then
-        console.print(string.format('[WarMachine] enter_undercity: timed out after %.0fs — aborting',
+        console.print(string.format('[WarMachine] enter_undercity: timed out after %.0fs -- aborting',
             TOTAL_TIMEOUT_S))
         reset_pending(state)
         task.status = nil
@@ -155,16 +155,16 @@ task.Execute = function ()
             end
             task.status = 'Open Portal + Enter (waiting for portal)'
         else
-            console.print('[WarMachine] enter_undercity: Open Portal coords not configured — set them in the Undercity tab')
+            console.print('[WarMachine] enter_undercity: Open Portal coords not configured -- set them in the Undercity tab')
             task.status = 'Open Portal coords missing'
         end
         return
     end
 
-    -- 3. No portal, no tribute UI → interact with the Undercity Obelisk.
+    -- 3. No portal, no tribute UI -> interact with the Undercity Obelisk.
     local obelisk = interact.find_by_skin(OBELISK_SKIN, true)
     if not obelisk then
-        console.print('[WarMachine] enter_undercity: Undercity Obelisk not in stream — walk closer in Temis')
+        console.print('[WarMachine] enter_undercity: Undercity Obelisk not in stream -- walk closer in Temis')
         task.status = 'Undercity Obelisk out of stream'
         return
     end
@@ -173,7 +173,7 @@ task.Execute = function ()
         local r = interact.walk_and_interact(obelisk, INTERACT_RANGE)
         if r == 'too_far' then
             local d = interact.distance(get_local_player(), obelisk)
-            console.print(string.format('[WarMachine] enter_undercity: Undercity Obelisk %.1fy away — aborting', d))
+            console.print(string.format('[WarMachine] enter_undercity: Undercity Obelisk %.1fy away -- aborting', d))
             reset_pending(state)
             task.status = nil
             return

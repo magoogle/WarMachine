@@ -3,9 +3,9 @@
 --
 -- Lightweight wrappers for finding actors and clicking them. We deliberately
 -- AVOID Batmobile pathfinding for short-range NPC interactions in town:
---   • Batmobile A* fails on NPC origins because they sit on collision tiles
---   • Asking the pathfinder for routes near vendors burns 1000s of frontiers
---     and reports PATHFIND FAILED — see the [nav] log block in town.
+--   * Batmobile A* fails on NPC origins because they sit on collision tiles
+--   * Asking the pathfinder for routes near vendors burns 1000s of frontiers
+--     and reports PATHFIND FAILED -- see the [nav] log block in town.
 --
 -- D4's built-in `interact_object(actor)` walks the player the final few
 -- yards on its own, the same way clicking an NPC name in normal play does.
@@ -44,12 +44,12 @@ local function distance(a, b)
 end
 interact.distance = distance
 
--- Direct interact — D4 walks the player the last few yards itself.
+-- Direct interact -- D4 walks the player the last few yards itself.
 -- Returns:
---   'interacted'  — interact_object() called
---   'too_far'     — actor exists but beyond interact_range (defaults to 30y,
+--   'interacted'  -- interact_object() called
+--   'too_far'     -- actor exists but beyond interact_range (defaults to 30y,
 --                   which is roughly the actor stream radius in town)
---   'no_actor'    — actor is nil or has no position
+--   'no_actor'    -- actor is nil or has no position
 interact.walk_and_interact = function (actor, interact_range)
     interact_range = interact_range or 30.0
     if not actor then return 'no_actor' end

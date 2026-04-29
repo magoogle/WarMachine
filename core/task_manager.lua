@@ -32,11 +32,8 @@ task_manager.get_current_task = function ()
     return current_task
 end
 
--- Priority order — first task whose shouldExecute() returns true wins.
+-- Priority order -- first task whose shouldExecute() returns true wins.
 local task_files = {
-    -- Manual probes
-    'warplan.test_confirm',     -- "dismiss confirm dialog" probe
-
     -- Triggered click sequences (fire on tracker pending flags)
     'warplan.test_select',      -- vendor menu click sequence
     'warplan.test_next_obj',    -- Tab + click Next-Obj button
@@ -53,7 +50,7 @@ local task_files = {
     -- supervisor so it claims the pulse before the sub-plugin is re-enabled.
     'pit.post_boss',
 
-    -- Sub-plugin orchestrator — enables the matching sub-plugin
+    -- Sub-plugin orchestrator -- enables the matching sub-plugin
     -- (SigilRunner / HelltideRevamped / WonderCity / ArkhamAsylum) when
     -- in the activity's runtime zone, disables on transition.
     'warplan.supervisor',

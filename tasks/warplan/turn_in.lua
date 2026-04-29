@@ -6,7 +6,7 @@
 -- WarPlans_QST_TurnIn_Rewards from the active quest list.
 --
 -- Flow:
---   1. If WarPlans_QST_TurnIn_Rewards is no longer in the quest list →
+--   1. If WarPlans_QST_TurnIn_Rewards is no longer in the quest list ->
 --      already turned in. Exit.
 --   2. Otherwise send interact_object(tyrael) and re-send every 2s until
 --      the quest disappears or we hit the total timeout.
@@ -51,7 +51,7 @@ task.Execute = function ()
     local now   = get_time_since_inject()
     local state = tracker.warplan.turn_in
 
-    -- 1. Quest gone → success. Exit.
+    -- 1. Quest gone -> success. Exit.
     if not turnin_quest_present() then
         console.print('[WarMachine] turn_in: complete (quest cleared)')
         state.result = 'success'
@@ -63,7 +63,7 @@ task.Execute = function ()
     -- 2. Find Tyrael
     local tyrael = interact.find_by_skin(TYRAEL_SKIN, true)
     if not tyrael then
-        console.print('[WarMachine] turn_in: Tyrael not in actor stream — walk closer in Temis')
+        console.print('[WarMachine] turn_in: Tyrael not in actor stream -- walk closer in Temis')
         state.result = 'no_actor'
         reset(state)
         task.status = nil
@@ -78,7 +78,7 @@ task.Execute = function ()
 
     -- Total timeout
     if now - state.first_attempt_at > TOTAL_TIMEOUT then
-        console.print(string.format('[WarMachine] turn_in: did not register in %.0fs — aborting', TOTAL_TIMEOUT))
+        console.print(string.format('[WarMachine] turn_in: did not register in %.0fs -- aborting', TOTAL_TIMEOUT))
         state.result = 'timeout'
         reset(state)
         task.status = nil
@@ -90,7 +90,7 @@ task.Execute = function ()
         local r = interact.walk_and_interact(tyrael, INTERACT_RANGE)
         if r == 'too_far' or r == 'no_actor' then
             local d = interact.distance(get_local_player(), tyrael)
-            console.print(string.format('[WarMachine] turn_in: Tyrael %.1fy away — aborting', d))
+            console.print(string.format('[WarMachine] turn_in: Tyrael %.1fy away -- aborting', d))
             state.result = r
             reset(state)
             task.status = nil

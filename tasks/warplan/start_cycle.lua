@@ -4,7 +4,7 @@
 -- Open the WAR PLANS menu by interacting with Warplans_Vendor in Skov_Temis.
 --
 -- Flow:
---   1. If loot_manager.is_in_vendor_screen() → menu is open, chain into
+--   1. If loot_manager.is_in_vendor_screen() -> menu is open, chain into
 --      auto-select and exit.
 --   2. Otherwise, send interact_object(vendor) and re-send every 2s until
 --      the menu opens or we hit the total timeout.
@@ -47,7 +47,7 @@ task.Execute = function ()
     local now   = get_time_since_inject()
     local state = tracker.warplan.start_cycle
 
-    -- 1. Menu already open → trigger auto-select and exit.
+    -- 1. Menu already open -> trigger auto-select and exit.
     if menu_is_open() then
         local sel = tracker.warplan.test
         sel.pending      = true
@@ -65,7 +65,7 @@ task.Execute = function ()
     -- 2. Find vendor
     local vendor = interact.find_by_skin(VENDOR_SKIN, true)
     if not vendor then
-        console.print('[WarMachine] start_cycle: vendor not in actor stream — walk closer in Temis')
+        console.print('[WarMachine] start_cycle: vendor not in actor stream -- walk closer in Temis')
         reset(state)
         task.status = nil
         return
@@ -79,7 +79,7 @@ task.Execute = function ()
 
     -- Total timeout
     if now - state.first_attempt_at > TOTAL_TIMEOUT then
-        console.print(string.format('[WarMachine] start_cycle: vendor menu did not open in %.0fs — aborting', TOTAL_TIMEOUT))
+        console.print(string.format('[WarMachine] start_cycle: vendor menu did not open in %.0fs -- aborting', TOTAL_TIMEOUT))
         reset(state)
         task.status = nil
         return
@@ -90,7 +90,7 @@ task.Execute = function ()
         local r = interact.walk_and_interact(vendor, INTERACT_RANGE)
         if r == 'too_far' or r == 'no_actor' then
             local d = interact.distance(get_local_player(), vendor)
-            console.print(string.format('[WarMachine] start_cycle: Warplans_Vendor %.1fy away — aborting', d))
+            console.print(string.format('[WarMachine] start_cycle: Warplans_Vendor %.1fy away -- aborting', d))
             reset(state)
             task.status = nil
             return

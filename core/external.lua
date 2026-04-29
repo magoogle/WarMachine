@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- External plugin facade — exposed as global WarMachinePlugin.
+-- External plugin facade -- exposed as global WarMachinePlugin.
 -- Lets other scripts (and the MCP bridge) read state and toggle the bot.
 -- ---------------------------------------------------------------------------
 
@@ -28,7 +28,7 @@ local external = {
             warplan = tracker.warplan and tracker.warplan.snapshot or nil,
         }
     end,
-    -- Forced fresh read (bypasses tracker cache) — useful for MCP probes.
+    -- Forced fresh read (bypasses tracker cache) -- useful for MCP probes.
     get_warplan = warplan_state.read,
     get_usable_sigils = warplan_state.usable_sigils,
     enable = function ()

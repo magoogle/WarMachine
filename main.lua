@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- WarMachine v0.2 by Magoogle — War Plan orchestrator.
+-- WarMachine v0.2 by Magoogle -- War Plan orchestrator.
 --
 -- Single entry point that drives the War Plan cycle: opens the WAR PLANS
 -- vendor menu, selects activities, teleports between them via the map's
@@ -61,7 +61,7 @@ local main_pulse = function ()
         tracker.last_mode = settings.mode
     end
 
-    -- Refresh War Plan state every pulse — quest API is cheap to read.
+    -- Refresh War Plan state every pulse -- quest API is cheap to read.
     -- Detect transitions (none -> active, active -> none, activity changed).
     local wp = warplan_state.read()
     local prev = tracker.warplan.snapshot
@@ -115,7 +115,7 @@ local function draw_crosshair(cx, cy, label, color)
 end
 
 local render_pulse = function ()
-    -- Click-point overlay renders regardless of bot enable state — it's a
+    -- Click-point overlay renders regardless of bot enable state -- it's a
     -- positioning aid that needs to be visible while the user is dragging
     -- sliders, even before they flip Enable on.
     if settings.warplan and settings.warplan.show_click_points then
@@ -146,7 +146,7 @@ local render_pulse = function ()
         end
     end
 
-    -- (NMD, Pit, and Helltide standalone modes were removed — the
+    -- (NMD, Pit, and Helltide standalone modes were removed -- the
     -- corresponding sub-plugins handle their own click points.)
 
     if not local_player or not settings.enabled then return end
@@ -168,7 +168,7 @@ local render_pulse = function ()
     local y = 80
     graphics.text_2d(msg, vec2:new(x, y), 20, color_white(255))
 
-    -- Active War Plan summary (if any) — driven from the cached snapshot.
+    -- Active War Plan summary (if any) -- driven from the cached snapshot.
     local wp = tracker.warplan and tracker.warplan.snapshot
     if wp and wp.active and wp.quest then
         -- Header line: name, activity, macro progress
@@ -181,7 +181,7 @@ local render_pulse = function ()
         local wpx = get_screen_width() / 2 - (#wp_msg * 5.5)
         graphics.text_2d(wp_msg, vec2:new(wpx, y + 24), 18, color_yellow(220))
 
-        -- First non-"War Plan: N/M" objective text — that's the actionable line
+        -- First non-"War Plan: N/M" objective text -- that's the actionable line
         for _, o in ipairs(wp.quest.objectives or {}) do
             if o.text and not o.text:find('War Plan:') then
                 local t = o.text

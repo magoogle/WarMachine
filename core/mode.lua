@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- WarMachine mode — orchestrator-only design.
+-- WarMachine mode -- orchestrator-only design.
 --
 -- WarMachine's job is to run the War Plan cycle: open vendor menu, accept
 -- a plan, tp between activities, hand off each activity to the appropriate

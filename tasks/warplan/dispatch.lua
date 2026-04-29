@@ -5,7 +5,7 @@
 -- decides which sub-task should fire (next-obj teleport / turn-in /
 -- start-cycle / activity supervisor).
 --
--- This task ONLY decides — it sets pending flags on tracker.warplan.*
+-- This task ONLY decides -- it sets pending flags on tracker.warplan.*
 -- and returns. Higher-priority tasks (test_select, test_next_obj,
 -- turn_in, start_cycle) execute the actual mouse/keyboard work on
 -- subsequent pulses.
@@ -13,14 +13,14 @@
 -- Decision tree:
 --   active warplan exists:
 --     activity == 'turnin'
---       in Skov_Temis    → set turn_in.pending
---       elsewhere        → set next_obj.pending  (tp home)
+--       in Skov_Temis    -> set turn_in.pending
+--       elsewhere        -> set next_obj.pending  (tp home)
 --     activity in {nightmare, helltide, undercity}
---       wrong zone       → set next_obj.pending  (tp to dungeon/zone)
---       correct zone     → no-op (activity supervisor handles in-zone)
+--       wrong zone       -> set next_obj.pending  (tp to dungeon/zone)
+--       correct zone     -> no-op (activity supervisor handles in-zone)
 --   no active warplan:
---     in Skov_Temis      → if auto_cycle on, set start_cycle.pending
---     elsewhere          → if auto_next_obj on, set next_obj.pending
+--     in Skov_Temis      -> if auto_cycle on, set start_cycle.pending
+--     elsewhere          -> if auto_next_obj on, set next_obj.pending
 -- ---------------------------------------------------------------------------
 
 local settings      = require 'core.settings'
@@ -138,7 +138,7 @@ task.Execute = function ()
         -- We have an active war plan
         local match = zone_matches_activity(zone, wp.activity)
         if not match then
-            -- Wrong zone for active activity → tp (after loot grace)
+            -- Wrong zone for active activity -> tp (after loot grace)
             if in_loot_grace() then
                 local left = LOOT_GRACE_S - (now - tracker.warplan.activity_completed_at)
                 task.status = string.format('loot grace %.1fs', left)
@@ -166,7 +166,7 @@ task.Execute = function ()
             return
         end
 
-        -- nightmare/helltide/undercity/pit in correct zone — supervisor
+        -- nightmare/helltide/undercity/pit in correct zone -- supervisor
         -- handles sub-plugin enable/disable; entry tasks (enter_undercity,
         -- pit/enter) handle Temis-side obelisk/crafter clicks if needed.
         task.status = 'in ' .. tostring(wp.activity)

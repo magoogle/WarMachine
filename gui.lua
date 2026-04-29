@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- WarMachine v0.2 by Magoogle — orchestrator-only GUI
+-- WarMachine v0.2 by Magoogle -- orchestrator-only GUI
 --
 -- WarMachine drives the War Plan cycle (vendor menu, tp, turn-in) and
 -- enables/disables the appropriate sub-plugin per active activity.
@@ -15,7 +15,7 @@ local gui = {}
 
 -- ---------------------------------------------------------------------------
 -- Required sub-plugin dependencies. WarMachine is an orchestrator and
--- cannot run any activity itself — each sub-plugin owns its activity.
+-- cannot run any activity itself -- each sub-plugin owns its activity.
 -- The folder name shown is the canonical one; suffix variants such as
 -- "ArkhamAsylum-v1.0" or "ArkhamAsylum1" are tolerated automatically
 -- because the plugin global (e.g. ArkhamAsylumPlugin) is set by the
@@ -72,24 +72,22 @@ gui.elements = {
 
     -- Hash key bumped (mode_select_v2) to invalidate any saved combo-box
     -- state from the pre-orchestrator versions (mode used to range 0..6
-    -- with Hordes=5 / Pit=6 — those indices are out of range now and
+    -- with Hordes=5 / Pit=6 -- those indices are out of range now and
     -- crash the host's combo_box render).
     mode_select    = co(1, 'mode_select_v2'),  -- default to War Plan
 
     -- War Plan automation toggles
-    warplan_auto_tree            = tree_node:new(1),
-    warplan_auto_next_obj        = cb(true,  'warplan_auto_next_obj'),
-    warplan_auto_turn_in         = cb(true,  'warplan_auto_turn_in'),
-    warplan_auto_select          = cb(true,  'warplan_auto_select'),
-    warplan_auto_cycle           = cb(false, 'warplan_auto_cycle'),
-    warplan_test_confirm_button  = btn('warplan_test_confirm_button'),
+    warplan_auto_tree   = tree_node:new(1),
+    warplan_auto_next_obj = cb(true,  'warplan_auto_next_obj'),
+    warplan_auto_turn_in  = cb(true,  'warplan_auto_turn_in'),
+    warplan_auto_select   = cb(true,  'warplan_auto_select'),
+    warplan_auto_cycle    = cb(false, 'warplan_auto_cycle'),
 
     -- War Plan vendor menu click points
     warplan_cp_tree     = tree_node:new(1),
     warplan_show_points = cb(false, 'warplan_show_points'),
-    warplan_test_button = btn('warplan_test_button'),
 
-    -- 5 rows × 3 cols = 15 slot click-points covering the WAR PLANS menu
+    -- 5 rows x 3 cols = 15 slot click-points covering the WAR PLANS menu
     -- Row 1 (red)
     warplan_cp_s1_x  = si(0, 3840, 320, 'warplan_cp_s1_x'),
     warplan_cp_s1_y  = si(0, 2160, 360, 'warplan_cp_s1_y'),
@@ -133,7 +131,6 @@ gui.elements = {
     warplan_cp_confirm_y = si(0, 2160, 0,    'warplan_cp_confirm_y'),
 
     -- Map "Next Warplan Objective" button
-    warplan_test_next_obj = btn('warplan_test_next_obj'),
     warplan_cp_nextobj_x  = si(0, 3840, 960, 'warplan_cp_nextobj_x'),
     warplan_cp_nextobj_y  = si(0, 2160, 960, 'warplan_cp_nextobj_y'),
 
@@ -156,7 +153,7 @@ gui.render = function ()
     local missing = get_missing_dependencies()
     if #missing > 0 then
         render_menu_header('==========================================================')
-        render_menu_header('  MISSING SUB-PLUGINS — WarMachine cannot run without these:')
+        render_menu_header('  MISSING SUB-PLUGINS -- WarMachine cannot run without these:')
         for _, folder in ipairs(missing) do
             render_menu_header('    * ' .. folder .. '  (or ' .. folder .. '-* variant)')
         end
@@ -177,7 +174,7 @@ gui.render = function ()
         'Idle = no-op. War Plan = run the war plan cycle (vendor menu + tp between activities + sub-plugin handoff + turn-in).'
     )
 
-    render_menu_header('WarMachine is the war-plan ORCHESTRATOR. It does not run activities directly — it enables the matching sub-plugin (SigilRunner / HelltideRevamped / WonderCity / ArkhamAsylum) when each activity is active in the war plan, then disables it on completion. Each sub-plugin must be installed AND have its own main_toggle ON for orchestration to work.')
+    render_menu_header('WarMachine is the war-plan ORCHESTRATOR. It does not run activities directly -- it enables the matching sub-plugin (SigilRunner / HelltideRevamped / WonderCity / ArkhamAsylum) when each activity is active in the war plan, then disables it on completion. Each sub-plugin must be installed AND have its own main_toggle ON for orchestration to work.')
 
     if gui.elements.warplan_auto_tree:push('Automation') then
         render_menu_header('Toggles control which steps WarMachine drives automatically. With everything off, mode is observe-only.')
@@ -189,18 +186,14 @@ gui.render = function ()
             'Run the click sequence when the WAR PLANS menu is open and no war plan is active.')
         gui.elements.warplan_auto_cycle:render('Auto-start next cycle',
             'After turn-in, walk back to Warplans_Vendor and start a new war plan automatically. Loop forever.')
-        gui.elements.warplan_test_confirm_button:render('Test: dismiss confirm dialog',
-            'Calls utility.confirm_sigil_notification() once. Click while a confirmation popup is up.', 0)
         gui.elements.warplan_auto_tree:pop()
     end
 
     if gui.elements.warplan_cp_tree:push('Vendor menu click points') then
         render_menu_header('Open the War Plans vendor window. Toggle "Show points" to see crosshairs, then drag sliders to align them with each activity slot, START, Confirm popup, and the map Next-Obj button.')
         gui.elements.warplan_show_points:render('Show points', 'Render crosshairs at each click point')
-        gui.elements.warplan_test_button:render('Test selection sequence',
-            'Bot must be enabled. Clicks every slot then START + Confirm. Stops when quest list grows.', 0)
 
-        render_menu_header('5×3 grid covering the WAR PLANS menu. Iteration clicks each cell once — redundant hits on the same slot toggle it, but full grid coverage guarantees we hit every visible slot.')
+        render_menu_header('5x3 grid covering the WAR PLANS menu. Iteration clicks each cell once -- redundant hits on the same slot toggle it, but full grid coverage guarantees we hit every visible slot.')
         local function row(prefix, color_label, e1x, e1y, e2x, e2y, e3x, e3y)
             e1x:render(prefix .. ' L X', 'Screen X for ' .. prefix .. ' left ('  .. color_label .. ')')
             e1y:render(prefix .. ' L Y', 'Screen Y for ' .. prefix .. ' left')
@@ -232,17 +225,15 @@ gui.render = function ()
         gui.elements.warplan_cp_start_x:render('START X', 'Screen X for the START button')
         gui.elements.warplan_cp_start_y:render('START Y', 'Screen Y for the START button')
 
-        render_menu_header('Confirmation popup — appears after START asking to confirm the war plan. Leave at 0,0 if your war plan doesn\'t show this popup; the step will be skipped.')
+        render_menu_header('Confirmation popup -- appears after START asking to confirm the war plan. Leave at 0,0 if your war plan doesn\'t show this popup; the step will be skipped.')
         gui.elements.warplan_cp_confirm_x:render('Confirm X', 'Screen X for the Confirm button on the post-START popup (silver crosshair)')
         gui.elements.warplan_cp_confirm_y:render('Confirm Y', 'Screen Y for the Confirm button')
 
-        render_menu_header('Map "Next Warplan Objective" button — opens map (Tab) and clicks the next-objective marker for a one-step teleport between activities.')
-        gui.elements.warplan_test_next_obj:render('Test: open map + next objective',
-            'Sends Tab, waits, clicks the configured map button. Bot must be enabled.', 0)
+        render_menu_header('Map "Next Warplan Objective" button. Opens map (Tab) and clicks the next-objective marker for a one-step teleport between activities.')
         gui.elements.warplan_cp_nextobj_x:render('Next-Obj X', 'Screen X for the Next-Warplan-Objective button on the map')
         gui.elements.warplan_cp_nextobj_y:render('Next-Obj Y', 'Screen Y for the Next-Warplan-Objective button')
 
-        render_menu_header('Undercity Obelisk Open Portal button — appears in the tribute UI after interacting with the Undercity Obelisk in Temis. Brown crosshair.')
+        render_menu_header('Undercity Obelisk Open Portal button -- appears in the tribute UI after interacting with the Undercity Obelisk in Temis. Brown crosshair.')
         gui.elements.undercity_auto_enter:render('Auto-enter Undercity',
             'When in Temis with an active Undercity war plan, walk to the Undercity Obelisk + click Open Portal automatically.')
         gui.elements.undercity_cp_open_portal_x:render('Open Portal X',

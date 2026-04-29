@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- Fallback task — fires when nothing higher-priority should run.
+-- Fallback task -- fires when nothing higher-priority should run.
 -- Always last in the task list.
 -- ---------------------------------------------------------------------------
 

@@ -6,11 +6,11 @@
 -- ArkhamAsylum. Now WarMachine simply enables the matching sub-plugin
 -- when the player is in the activity zone, and disables it on transition.
 --
--- Activity → sub-plugin map:
---   nightmare → SigilRunnerPlugin
---   helltide  → HelltideRevampedPlugin
---   undercity → WonderCityPlugin
---   pit       → ArkhamAsylumPlugin
+-- Activity -> sub-plugin map:
+--   nightmare -> SigilRunnerPlugin
+--   helltide  -> HelltideRevampedPlugin
+--   undercity -> WonderCityPlugin
+--   pit       -> ArkhamAsylumPlugin
 --
 -- Sub-plugins must be installed AND have their own main_toggle ON for
 -- this to work. WarMachine's enable() flips their keybind_toggle on/off
@@ -24,7 +24,7 @@ local mode     = require 'core.mode'
 local task = { name = 'warplan_supervisor', status = nil }
 
 -- ---------------------------------------------------------------------------
--- Activity → plugin tag → plugin-global lookup
+-- Activity -> plugin tag -> plugin-global lookup
 -- ---------------------------------------------------------------------------
 
 local PLUGIN_FOR_ACTIVITY = {
@@ -63,7 +63,7 @@ local function in_activity_zone(zone, activity)
 end
 
 -- ---------------------------------------------------------------------------
--- Plugin enable/disable with state tracking. Idempotent — only logs +
+-- Plugin enable/disable with state tracking. Idempotent -- only logs +
 -- calls the facade when the active plugin actually changes.
 -- ---------------------------------------------------------------------------
 
@@ -123,7 +123,7 @@ task.Execute = function ()
     local wp   = tracker.warplan.snapshot
     local zone = get_current_world() and get_current_world():get_current_zone_name() or nil
 
-    -- No active warplan → no sub-plugin should be on
+    -- No active warplan -> no sub-plugin should be on
     if not (wp and wp.active and wp.quest) then
         if tracker.warplan.active_sub_plugin then
             enable_plugin(nil)
@@ -132,7 +132,7 @@ task.Execute = function ()
         return
     end
 
-    -- Turn-in phase → no sub-plugin (WarMachine's turn_in task handles it)
+    -- Turn-in phase -> no sub-plugin (WarMachine's turn_in task handles it)
     if wp.activity == 'turnin' then
         if tracker.warplan.active_sub_plugin then
             enable_plugin(nil)
@@ -159,7 +159,7 @@ task.Execute = function ()
     else
         -- Wrong zone for the activity. Sub-plugin must be off so it doesn't
         -- run from the wrong town (e.g. SigilRunner tries to consume a
-        -- sigil if enabled in town with sigils — bad while in War Plan).
+        -- sigil if enabled in town with sigils -- bad while in War Plan).
         if tracker.warplan.active_sub_plugin then
             enable_plugin(nil)
         end
