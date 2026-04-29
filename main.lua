@@ -148,14 +148,7 @@ local render_pulse = function ()
         end
     end
 
-    -- Pit map-travel overlay
-    if settings.warplan and settings.warplan.show_click_points
-       and settings.pit and settings.pit.travel_click then
-        local pc = settings.pit.travel_click
-        if pc and (pc.x ~= 0 or pc.y ~= 0) then
-            draw_crosshair(pc.x, pc.y, pc.label, color_gold(220))
-        end
-    end
+    -- (Pit reuses warplan.next_objective — no separate overlay.)
 
     if not local_player or not settings.enabled then return end
     if not settings.get_keybind_state() then return end

@@ -115,15 +115,10 @@ local tracker = {
         enter = {
             debounce_time = -1,
         },
-        -- Map-travel state machine (Tab + click waypoint to reach Pit hub)
-        travel = {
-            pending           = false,
-            step              = 0,    -- 0=open map, 1=click, 2=verify
-            timer             = 0,
-            verify_started_at = nil,
-            baseline_zone     = nil,
-            last_attempt_at   = -math.huge,
-        },
+        -- Last-attempt timestamp for cooldown between Pit travel triggers.
+        -- The actual travel state machine lives in tracker.warplan.next_obj
+        -- (shared with War Plan / NMD / Undercity Next-Obj travel).
+        last_travel_attempt_at = -math.huge,
     },
 
     -- Bot-level halt: any task can flip this to true to stop the entire run.

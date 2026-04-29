@@ -83,9 +83,6 @@ gui.elements = {
     pit_reset_timeout   = si(60, 1800, 600, 'pit_reset_timeout'),
     pit_exit_mode       = co(0, 'pit_exit_mode'),  -- 0=reset (returns to Temis), 1=tp Cerrigar
     pit_interact_shrine = cb(true, 'pit_interact_shrine'),
-    -- Map-travel click point (Tab + click on the Pit hub waypoint icon)
-    pit_cp_travel_x     = si(0, 3840, 0, 'pit_cp_travel_x'),
-    pit_cp_travel_y     = si(0, 2160, 0, 'pit_cp_travel_y'),
 
     -- War Plan automation toggles (Phase 5)
     warplan_auto_tree            = tree_node:new(1),
@@ -227,11 +224,11 @@ gui.render = function ()
     end
 
     if gui.elements.pit_tree:push('Pit settings') then
-        render_menu_header('Standalone Pit mode: bot opens map + clicks the Pit-hub waypoint to travel to Skov_Temis (S07 Pit hub), walks to the Iron Wolves Pit-key Crafter, opens the configured pit level, walks into the portal, runs the pit, exits on boss-cleared / glyph gizmo / timeout.')
+        render_menu_header('Standalone Pit mode: bot uses the SAME Next-Obj button on the map (purple crosshair under "Vendor menu click points") to travel to the Pit hub, then walks to the Iron Wolves Pit-key Crafter, opens the configured pit level, walks into the portal, runs the pit, exits on boss-cleared / glyph gizmo / timeout.')
         gui.elements.pit_auto_enter:render('Auto-enter Pit',
             'When at the Pit hub, automatically open + enter the configured pit.')
         gui.elements.pit_auto_travel:render('Auto-travel to Pit hub',
-            'When in Pit mode but not at the hub, press Tab + click the configured map waypoint to travel there.')
+            'When in Pit mode but not at the hub, fire the SAME Next-Obj map click that War Plan / NMD / Undercity use. Make sure the purple Next-Obj crosshair is positioned on the map\'s "Next Warplan Objective" button.')
         gui.elements.pit_level:render('Pit level',
             'Pit difficulty level (1..150). Higher = tougher, better rewards.')
         gui.elements.pit_reset_timeout:render('Reset timeout (s)',
@@ -240,12 +237,6 @@ gui.render = function ()
             'On exit: Reset Dungeons returns you to the town you opened the pit from (Temis in S07). Teleport to Cerrigar forces a hop there if you want Alfred to run.')
         gui.elements.pit_interact_shrine:render('Use shrines',
             'Interact with shrines encountered inside the pit.')
-
-        render_menu_header('Map waypoint click point — open map (Tab), hover the Skov_Temis (Pit hub) waypoint icon, position the gold crosshair on it.')
-        gui.elements.pit_cp_travel_x:render('Pit travel X',
-            'Screen X for the Pit-hub waypoint icon on the world map')
-        gui.elements.pit_cp_travel_y:render('Pit travel Y',
-            'Screen Y for the Pit-hub waypoint icon on the world map')
         gui.elements.pit_tree:pop()
     end
 

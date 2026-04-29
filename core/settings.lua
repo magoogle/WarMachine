@@ -111,11 +111,6 @@ settings.update_settings = function ()
     settings.pit.reset_timeout   = gui.elements.pit_reset_timeout:get()
     settings.pit.exit_mode       = gui.elements.pit_exit_mode:get()    -- 0=reset, 1=tp Cerrigar
     settings.pit.interact_shrine = gui.elements.pit_interact_shrine:get()
-    settings.pit.travel_click    = {
-        x = gui.elements.pit_cp_travel_x:get(),
-        y = gui.elements.pit_cp_travel_y:get(),
-        label = 'Pit travel',
-    }
 end
 
 return settings
