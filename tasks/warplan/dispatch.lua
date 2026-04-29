@@ -41,16 +41,20 @@ local function classify_zone(zone)
     if zone == 'Skov_Temis' then return 'temis' end
     if zone:match('^DGN_') then return 'dungeon' end
     if zone:match('^X1_Undercity_') then return 'undercity' end
+    if zone:match('^PIT_') then return 'pit' end
     return 'overworld'    -- could be helltide, world boss zone, or unrelated
 end
 
 -- True when current zone matches the kind of place the active war plan
--- activity progresses in.
+-- activity progresses in. Includes intermediate zones (e.g. Temis for
+-- Undercity / Pit, where WarMachine's own entry tasks handle the obelisk
+-- + portal flow before the sub-plugin takes over inside the dungeon).
 local function zone_matches_activity(zone, activity)
     local zc = classify_zone(zone)
     if activity == 'nightmare' then return zc == 'dungeon' end
     if activity == 'undercity' then return zc == 'undercity' or zc == 'temis' end
     if activity == 'helltide'  then return zc == 'overworld' end
+    if activity == 'pit'       then return zc == 'pit' or zc == 'temis' end
     if activity == 'turnin'    then return zc == 'temis'    end
     return false
 end
@@ -162,9 +166,10 @@ task.Execute = function ()
             return
         end
 
-        -- nightmare/helltide/undercity in correct zone — supervisor will run
-        -- in Phase 2/3/4 ports. For now, just observe.
-        task.status = 'in ' .. tostring(wp.activity) .. ' (supervisor TBD)'
+        -- nightmare/helltide/undercity/pit in correct zone — supervisor
+        -- handles sub-plugin enable/disable; entry tasks (enter_undercity,
+        -- pit/enter) handle Temis-side obelisk/crafter clicks if needed.
+        task.status = 'in ' .. tostring(wp.activity)
         return
     end
 

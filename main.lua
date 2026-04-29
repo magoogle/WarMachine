@@ -1,8 +1,15 @@
 -- ---------------------------------------------------------------------------
--- WarMachine v0.1 by Magoogle
--- Single entry point — replaces SigilRunner / WonderCity / HelltideRevamped.
--- Phase 1 skeleton: GUI renders, master toggle works, mode selector works,
--- idle task spins. No activity logic yet — that comes in Phases 2-5.
+-- WarMachine v0.2 by Magoogle — War Plan orchestrator.
+--
+-- Single entry point that drives the War Plan cycle: opens the WAR PLANS
+-- vendor menu, selects activities, teleports between them via the map's
+-- Next-Obj button, hands each activity off to the matching sub-plugin
+-- (SigilRunner / HelltideRevamped / WonderCity / ArkhamAsylum), and
+-- claims rewards at Tyrael when complete.
+--
+-- Sub-plugins remain independent and own their in-zone runtime. WarMachine
+-- enables the matching one when the player is in the activity's zone and
+-- disables it on transition.
 -- ---------------------------------------------------------------------------
 
 local plugin_label = 'warmachine'
@@ -139,16 +146,8 @@ local render_pulse = function ()
         end
     end
 
-    -- Nightmare map-click overlay
-    if settings.warplan and settings.warplan.show_click_points
-       and settings.nmd and settings.nmd.map_click then
-        local mc = settings.nmd.map_click
-        if mc and (mc.x ~= 0 or mc.y ~= 0) then
-            draw_crosshair(mc.x, mc.y, mc.label, color_pink(220))
-        end
-    end
-
-    -- (Pit reuses warplan.next_objective — no separate overlay.)
+    -- (NMD, Pit, and Helltide standalone modes were removed — the
+    -- corresponding sub-plugins handle their own click points.)
 
     if not local_player or not settings.enabled then return end
     if not settings.get_keybind_state() then return end

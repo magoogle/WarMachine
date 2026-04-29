@@ -1,43 +1,28 @@
 -- ---------------------------------------------------------------------------
--- Mode helpers — single source of truth for which activity is active.
+-- WarMachine mode — orchestrator-only design.
+--
+-- WarMachine's job is to run the War Plan cycle: open vendor menu, accept
+-- a plan, tp between activities, hand off each activity to the appropriate
+-- sub-plugin (SigilRunner / HelltideRevamped / WonderCity / ArkhamAsylum),
+-- and turn in at the end.
+--
+-- Standalone activities (running NMD on its own, helltide farming, etc.)
+-- live in those sub-plugins. The user enables them directly when they
+-- want to run an activity outside a war plan.
 -- ---------------------------------------------------------------------------
 
 local mode = {}
 
--- Match indices in gui.modes
-mode.IDLE      = 0
-mode.HELLTIDE  = 1
-mode.NIGHTMARE = 2
-mode.UNDERCITY = 3
-mode.WARPLAN   = 4
-mode.HORDES    = 5
-mode.PIT       = 6
+mode.IDLE    = 0
+mode.WARPLAN = 1
 
 mode.labels = {
     [0] = 'Idle',
-    [1] = 'Helltide',
-    [2] = 'Nightmare',
-    [3] = 'Undercity',
-    [4] = 'War Plan',
-    [5] = 'Hordes',
-    [6] = 'Pit',
+    [1] = 'War Plan',
 }
 
 mode.label = function (m)
     return mode.labels[m] or ('Unknown(' .. tostring(m) .. ')')
-end
-
--- True when the active mode equals `m`, or when War Plan is active and the
--- War Plan dispatcher has selected this activity.
--- For Phase 1 we only honor the literal selection — War Plan dispatching
--- arrives in Phase 5.
-mode.matches = function (settings, m)
-    if settings.mode == m then return true end
-    if settings.mode == mode.WARPLAN then
-        -- Phase 5 will read tracker.warplan_active_activity here.
-        return false
-    end
-    return false
 end
 
 return mode

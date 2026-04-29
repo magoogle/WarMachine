@@ -1,6 +1,7 @@
 -- ---------------------------------------------------------------------------
--- WarMachine settings — namespaced by activity.
--- Phase 1: only master + mode + debug. Per-activity sub-tables filled later.
+-- WarMachine settings — orchestrator only.
+-- Sub-plugin settings (sigil tier, helltide chests, pit level, etc.) live
+-- in their respective sub-plugin GUIs, not here.
 -- ---------------------------------------------------------------------------
 
 local gui = require 'gui'
@@ -10,18 +11,14 @@ local settings = {
     plugin_version = gui.plugin_version,
 
     enabled    = false,
-    mode       = 0,        -- index into gui.modes (0=Idle)
+    mode       = 1,   -- default to War Plan
     debug_mode = false,
 
-    -- Per-activity namespaces — populated in later phases.
-    helltide  = {},
-    nmd       = {},
-    undercity = {},
+    -- War Plan automation namespace + Undercity click-points
     warplan   = {},
-    pit       = {},
+    undercity = {},
 }
 
--- Returns true when the keybind is held / not in use.
 settings.get_keybind_state = function ()
     local toggle_key   = gui.elements.keybind_toggle:get_key()
     local toggle_state = gui.elements.keybind_toggle:get_state()
@@ -36,14 +33,13 @@ settings.update_settings = function ()
     settings.mode       = gui.elements.mode_select:get()
     settings.debug_mode = gui.elements.debug_mode:get()
 
-    -- War Plan automation toggles (Phase 5)
-    settings.warplan.auto_next_obj = gui.elements.warplan_auto_next_obj:get()
-    settings.warplan.auto_turn_in  = gui.elements.warplan_auto_turn_in:get()
-    settings.warplan.auto_select   = gui.elements.warplan_auto_select:get()
-    settings.warplan.auto_cycle    = gui.elements.warplan_auto_cycle:get()
+    -- War Plan automation
+    settings.warplan.auto_next_obj      = gui.elements.warplan_auto_next_obj:get()
+    settings.warplan.auto_turn_in       = gui.elements.warplan_auto_turn_in:get()
+    settings.warplan.auto_select        = gui.elements.warplan_auto_select:get()
+    settings.warplan.auto_cycle         = gui.elements.warplan_auto_cycle:get()
+    settings.warplan.show_click_points  = gui.elements.warplan_show_points:get()
 
-    -- War Plan vendor click points (Phase 5 prototype)
-    settings.warplan.show_click_points = gui.elements.warplan_show_points:get()
     settings.warplan.click_points = {
         slots = {
             { x = gui.elements.warplan_cp_s1_x:get(),  y = gui.elements.warplan_cp_s1_y:get(),  label = '1' },
@@ -62,20 +58,12 @@ settings.update_settings = function ()
             { x = gui.elements.warplan_cp_s14_x:get(), y = gui.elements.warplan_cp_s14_y:get(), label = '14' },
             { x = gui.elements.warplan_cp_s15_x:get(), y = gui.elements.warplan_cp_s15_y:get(), label = '15' },
         },
-        start = { x = gui.elements.warplan_cp_start_x:get(), y = gui.elements.warplan_cp_start_y:get(), label = 'START' },
-        confirm = {
-            x = gui.elements.warplan_cp_confirm_x:get(),
-            y = gui.elements.warplan_cp_confirm_y:get(),
-            label = 'Confirm',
-        },
-        next_objective = {
-            x = gui.elements.warplan_cp_nextobj_x:get(),
-            y = gui.elements.warplan_cp_nextobj_y:get(),
-            label = 'Next Obj',
-        },
+        start          = { x = gui.elements.warplan_cp_start_x:get(),   y = gui.elements.warplan_cp_start_y:get(),   label = 'START'    },
+        confirm        = { x = gui.elements.warplan_cp_confirm_x:get(), y = gui.elements.warplan_cp_confirm_y:get(), label = 'Confirm'  },
+        next_objective = { x = gui.elements.warplan_cp_nextobj_x:get(), y = gui.elements.warplan_cp_nextobj_y:get(), label = 'Next Obj' },
     }
 
-    -- Undercity automation
+    -- Undercity entry click point (war-plan UC entry from Skov_Temis)
     settings.undercity.auto_enter = gui.elements.undercity_auto_enter:get()
     settings.undercity.click_points = {
         open_portal = {
@@ -84,33 +72,6 @@ settings.update_settings = function ()
             label = 'Open Portal',
         },
     }
-
-    -- Nightmare standalone
-    settings.nmd.auto_use_sigil = gui.elements.nmd_auto_use_sigil:get()
-    settings.nmd.min_tier       = gui.elements.nmd_min_tier:get()    -- 0=Any
-    settings.nmd.max_tier       = gui.elements.nmd_max_tier:get()
-    settings.nmd.map_click = {
-        x = gui.elements.nmd_map_x:get(),
-        y = gui.elements.nmd_map_y:get(),
-        label = 'Map NMD',
-    }
-
-    -- Helltide
-    settings.helltide.auto_chests   = gui.elements.helltide_auto_chests:get()
-    settings.helltide.min_cinders   = gui.elements.helltide_min_cinders:get()
-    settings.helltide.pursue_props  = gui.elements.helltide_pursue_props:get()
-    settings.helltide.pursue_events = gui.elements.helltide_pursue_events:get()
-    settings.helltide.use_shrines   = gui.elements.helltide_use_shrines:get()
-    settings.helltide.chase_goblins = gui.elements.helltide_chase_goblins:get()
-
-    -- Pit
-    settings.pit = settings.pit or {}
-    settings.pit.auto_enter      = gui.elements.pit_auto_enter:get()
-    settings.pit.auto_travel     = gui.elements.pit_auto_travel:get()
-    settings.pit.level           = gui.elements.pit_level:get()
-    settings.pit.reset_timeout   = gui.elements.pit_reset_timeout:get()
-    settings.pit.exit_mode       = gui.elements.pit_exit_mode:get()    -- 0=reset, 1=tp Cerrigar
-    settings.pit.interact_shrine = gui.elements.pit_interact_shrine:get()
 end
 
 return settings

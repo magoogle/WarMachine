@@ -1,7 +1,6 @@
 -- ---------------------------------------------------------------------------
--- Task manager — same shouldExecute/Execute contract as SigilRunner et al.
--- Phase 1 registers only the idle no-op. Per-activity tasks register
--- themselves into the same list during Phase 2-5 ports.
+-- WarMachine task manager (orchestrator-only).
+-- Same shouldExecute/Execute contract as the sub-plugins.
 -- ---------------------------------------------------------------------------
 
 local task_manager = {}
@@ -33,42 +32,29 @@ task_manager.get_current_task = function ()
     return current_task
 end
 
--- Task registration order = priority. Highest priority first.
--- Phase 1 only registers the idle fallback. As activities are ported
--- (Phase 2-5) they prepend their tasks above 'shared.idle'.
--- Priority order — first task whose shouldExecute() returns true wins the
--- pulse. Test/click tasks run BEFORE the dispatcher so that pending flags
--- set by dispatch get serviced on the next pulse. Idle is always last.
+-- Priority order — first task whose shouldExecute() returns true wins.
 local task_files = {
-    -- Manual test buttons (fire once on click)
+    -- Manual probes
     'warplan.test_confirm',     -- "dismiss confirm dialog" probe
 
-    -- Triggered actions (fire when their pending flag is set, by either
-    -- the GUI test buttons or the dispatch task)
+    -- Triggered click sequences (fire on tracker pending flags)
     'warplan.test_select',      -- vendor menu click sequence
     'warplan.test_next_obj',    -- Tab + click Next-Obj button
     'warplan.turn_in',          -- walk to Tyrael + interact
     'warplan.start_cycle',      -- walk to Warplans_Vendor + interact
 
-    -- Self-triggering entry tasks (in town, mode-dependent)
-    'warplan.enter_undercity',  -- Undercity Obelisk + Open Portal (WarPlan UC OR standalone UC)
-    'nmd.use_sigil',            -- consume sigil + map-click (standalone NMD)
-    'nmd.enter_portal',         -- walk into NMD entrance portal once it spawns
+    -- Self-triggering town-side entry helpers (sub-plugin entry tasks
+    -- gate on legacy zones, so WarMachine handles UC/Pit entry from Temis)
+    'warplan.enter_undercity',  -- Undercity Obelisk + Open Portal
+    'pit.enter',                -- Iron Wolves Pit-key Crafter + open + portal
 
-    -- Pit tasks (standalone Pit mode)
-    'pit.exit',                 -- triggered first — exit conditions take priority over entry
-    'pit.teleport_cerrigar',    -- tp to Cerrigar if not there + not in pit
-    'pit.enter',                -- walk to Pit-key Crafter, open + enter portal
-
-    -- Hordes stub (data discovery TBD)
-    'hordes.dispatch',
-
-    -- In-zone supervisor — mode-agnostic. Drives Batmobile auto-explore
-    -- and objective targeting in the active activity's zone (NMD, Helltide,
-    -- Undercity).
+    -- Sub-plugin orchestrator — enables the matching sub-plugin
+    -- (SigilRunner / HelltideRevamped / WonderCity / ArkhamAsylum) when
+    -- in the activity's runtime zone, disables on transition.
     'warplan.supervisor',
 
-    -- War Plan top-level state machine — only active in War Plan mode.
+    -- War Plan top-level state machine (sets pending flags, fires next_obj
+    -- / turn_in / start_cycle based on warplan state).
     'warplan.dispatch',
 
     -- Always last
