@@ -13,6 +13,38 @@ console.print('Lua Plugin - WarMachine v' .. plugin_version .. ' by Magoogle (or
 
 local gui = {}
 
+-- ---------------------------------------------------------------------------
+-- Required sub-plugin dependencies. WarMachine is an orchestrator and
+-- cannot run any activity itself — each sub-plugin owns its activity.
+-- The folder name shown is the canonical one; suffix variants such as
+-- "ArkhamAsylum-v1.0" or "ArkhamAsylum1" are tolerated automatically
+-- because the plugin global (e.g. ArkhamAsylumPlugin) is set by the
+-- plugin's main.lua regardless of which folder it lives in.
+-- ---------------------------------------------------------------------------
+local REQUIRED_PLUGINS = {
+    { folder = 'Batmobile',        global = 'BatmobilePlugin'        },
+    { folder = 'ArkhamAsylum',     global = 'ArkhamAsylumPlugin'     },
+    { folder = 'HelltideRevamped', global = 'HelltideRevampedPlugin' },
+    { folder = 'SigilRunner',      global = 'SigilRunnerPlugin'      },
+    { folder = 'WonderCity',       global = 'WonderCityPlugin'       },
+}
+
+local function get_missing_dependencies()
+    local missing = {}
+    for _, dep in ipairs(REQUIRED_PLUGINS) do
+        if _G[dep.global] == nil then
+            missing[#missing + 1] = dep.folder
+        end
+    end
+    return missing
+end
+
+-- Public check used by settings.update_settings to gate the master toggle.
+gui.has_all_dependencies = function ()
+    return #get_missing_dependencies() == 0
+end
+gui.get_missing_dependencies = get_missing_dependencies
+
 local function cb(default, key)
     return checkbox:new(default, get_hash(plugin_label .. '_' .. key))
 end
@@ -117,6 +149,22 @@ gui.elements = {
 
 gui.render = function ()
     if not gui.elements.main_tree:push('WarMachine v' .. plugin_version .. ' by Magoogle') then return end
+
+    -- Dependency check banner. Block of red-text headers naming each
+    -- missing sub-plugin folder. The master toggle is force-disabled in
+    -- settings.update_settings when this list is non-empty.
+    local missing = get_missing_dependencies()
+    if #missing > 0 then
+        render_menu_header('==========================================================')
+        render_menu_header('  MISSING SUB-PLUGINS — WarMachine cannot run without these:')
+        for _, folder in ipairs(missing) do
+            render_menu_header('    * ' .. folder .. '  (or ' .. folder .. '-* variant)')
+        end
+        render_menu_header('  Install each script into scripts/. The folder name may have')
+        render_menu_header('  any suffix (e.g. ' .. missing[1] .. '-v1.0).')
+        render_menu_header('  Master toggle is force-disabled until all are present.')
+        render_menu_header('==========================================================')
+    end
 
     gui.elements.main_toggle:render('Enable', 'Master enable for WarMachine orchestrator')
     gui.elements.use_keybind:render('Use keybind', 'Keybind to quick-toggle the bot')

@@ -28,10 +28,30 @@ settings.get_keybind_state = function ()
     return false
 end
 
+-- Track whether we've logged the missing-deps message this enable cycle,
+-- so we don't spam the console every pulse.
+local _logged_dep_warning = false
+
 settings.update_settings = function ()
-    settings.enabled    = gui.elements.main_toggle:get()
+    local toggle_state  = gui.elements.main_toggle:get()
     settings.mode       = gui.elements.mode_select:get()
     settings.debug_mode = gui.elements.debug_mode:get()
+
+    -- Gate enable on all sub-plugins being present. Force off otherwise.
+    if toggle_state and not gui.has_all_dependencies() then
+        if not _logged_dep_warning then
+            local missing = gui.get_missing_dependencies()
+            console.print('[WarMachine] DISABLED: missing sub-plugins -> ' ..
+                table.concat(missing, ', '))
+            console.print('[WarMachine] Install each script into scripts/ ' ..
+                '(folder names tolerate -v1.0 etc. suffixes).')
+            _logged_dep_warning = true
+        end
+        settings.enabled = false
+    else
+        settings.enabled = toggle_state
+        if not toggle_state then _logged_dep_warning = false end   -- reset on user-toggle-off
+    end
 
     -- War Plan automation
     settings.warplan.auto_next_obj      = gui.elements.warplan_auto_next_obj:get()
