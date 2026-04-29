@@ -1,22 +1,26 @@
 -- ---------------------------------------------------------------------------
 -- tasks/pit/teleport_cerrigar.lua
 --
--- When Pit mode is active and we're not in Cerrigar, teleport there using
--- the known waypoint SNO (0x76D58 = 486744). This is the Pit hub town —
--- the Iron Wolves Pit-key Crafter NPC and the Pit portal both live here.
+-- LEGACY NAME — kept so task_manager registration doesn't change. The Pit
+-- moved from Kehjistan -> Cerrigar -> Skov_Temis over patches; the
+-- Pit-key Crafter now lives in Temis. We don't have a Temis waypoint SNO
+-- yet, so we can't auto-tp there. Instead this task just emits a one-time
+-- warning if Pit mode is selected but the player isn't at the Pit hub
+-- and isn't already in a pit. User must manually be in Skov_Temis.
+--
+-- (If we discover Temis's waypoint SNO later, this task can be revived
+-- to auto-tp via teleport_to_waypoint(waypoints.SKOV_TEMIS).)
 -- ---------------------------------------------------------------------------
 
 local settings  = require 'core.settings'
 local mode      = require 'core.mode'
-local waypoints = require 'data.waypoints'
 
-local task = { name = 'pit_teleport_cerrigar', status = nil }
-local _last_tp_at = -math.huge
-local TP_COOLDOWN_S = 10.0
+local task = { name = 'pit_idle_check', status = nil }
+local _warned = false
 
-local function in_cerrigar()
+local function in_pit_hub()
     local zone = get_current_world() and get_current_world():get_current_zone_name() or nil
-    return zone == 'Scos_Cerrigar'
+    return zone == 'Skov_Temis'
 end
 
 local function in_pit()
@@ -27,19 +31,19 @@ local function in_pit()
 end
 
 task.shouldExecute = function ()
-    if settings.mode ~= mode.PIT then return false end
+    if settings.mode ~= mode.PIT then
+        _warned = false   -- reset for next time the user enters Pit mode
+        return false
+    end
     if in_pit() then return false end
-    if in_cerrigar() then return false end
-    -- Cooldown to avoid spamming tp calls
-    if get_time_since_inject() - _last_tp_at < TP_COOLDOWN_S then return false end
-    return true
+    if in_pit_hub() then return false end
+    return not _warned    -- only fire once until conditions change
 end
 
 task.Execute = function ()
-    task.status = 'tp to Cerrigar'
-    console.print('[WarMachine] pit: teleport_to_waypoint(CERRIGAR)')
-    teleport_to_waypoint(waypoints.CERRIGAR)
-    _last_tp_at = get_time_since_inject()
+    console.print('[WarMachine] pit: not at Pit hub (Skov_Temis) and not in a pit. Walk/tp to Temis manually.')
+    _warned = true
+    task.status = 'idle (need Skov_Temis)'
 end
 
 return task

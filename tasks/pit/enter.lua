@@ -1,9 +1,14 @@
 -- ---------------------------------------------------------------------------
 -- tasks/pit/enter.lua
 --
--- In Cerrigar, walk to the Iron Wolves Pit-key Crafter, open the configured
--- pit level via utility.open_pit_portal(pit_address), then walk into the
--- spawned EGD_MSWK_World_Portal_01.
+-- In Skov_Temis (the S07 Pit hub), walk to the Iron Wolves Pit-key Crafter,
+-- open the configured pit level via utility.open_pit_portal(pit_address),
+-- then walk into the spawned EGD_MSWK_World_Portal_01.
+--
+-- NOTE: The crafter actor's skin name still has the legacy `TWN_Kehj_`
+-- prefix from when the Pit was in Kehjistan, then briefly Cerrigar; in
+-- S07 / Skarn it lives in Skov_Temis. We key off the actor skin name so
+-- it works regardless of where the game places the NPC in future patches.
 --
 -- Ported from ArkhamAsylum-1.0.6/tasks/enter_pit.lua, adapted to use D4's
 -- built-in walk-on-click for NPC interactions (no Batmobile path-to-NPC).
@@ -22,9 +27,9 @@ local CONFIRM_DELAY  = 1.5   -- after open_pit_portal call before re-checking
 
 local task = { name = 'pit_enter', status = nil }
 
-local function in_cerrigar()
+local function in_pit_hub()
     local zone = get_current_world() and get_current_world():get_current_zone_name() or nil
-    return zone == 'Scos_Cerrigar'
+    return zone == 'Skov_Temis'
 end
 
 local function in_pit()
@@ -54,7 +59,7 @@ task.shouldExecute = function ()
     if settings.mode ~= mode.PIT then return false end
     if not (settings.pit and settings.pit.auto_enter) then return false end
     if in_pit() then return false end
-    if not in_cerrigar() then return false end
+    if not in_pit_hub() then return false end
     return true
 end
 

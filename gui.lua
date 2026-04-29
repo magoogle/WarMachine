@@ -34,6 +34,10 @@ gui.modes = {
     'Pit',
 }
 
+-- Pit exit options. "Reset Dungeons" returns the player to whichever town
+-- they opened the pit from (Skov_Temis in S07 / Skarn). "Teleport to
+-- Cerrigar" forces a hop to Cerrigar — useful if you have an Alfred chain
+-- there but otherwise wrong now that the Pit hub is Temis.
 gui.pit_exit_modes = { 'Reset Dungeons', 'Teleport to Cerrigar' }
 
 gui.sigil_tier_list = { 'Any', 'Common', 'Magic', 'Rare', 'Legendary' }
@@ -76,7 +80,7 @@ gui.elements = {
     pit_auto_enter      = cb(true,  'pit_auto_enter'),
     pit_level           = si(1, 150, 1, 'pit_level'),
     pit_reset_timeout   = si(60, 1800, 600, 'pit_reset_timeout'),
-    pit_exit_mode       = co(1, 'pit_exit_mode'),  -- 0=reset, 1=tp to Cerrigar
+    pit_exit_mode       = co(0, 'pit_exit_mode'),  -- 0=reset (returns to Temis), 1=tp Cerrigar
     pit_interact_shrine = cb(true, 'pit_interact_shrine'),
 
     -- War Plan automation toggles (Phase 5)
@@ -227,7 +231,7 @@ gui.render = function ()
         gui.elements.pit_reset_timeout:render('Reset timeout (s)',
             'Force-exit the pit after this many seconds if not yet completed.')
         gui.elements.pit_exit_mode:render('Exit mode', gui.pit_exit_modes,
-            'On exit: Reset Dungeons (re-enter same pit) OR Teleport to Cerrigar.')
+            'On exit: Reset Dungeons returns you to the town you opened the pit from (Temis in S07). Teleport to Cerrigar forces a hop there if you want Alfred to run.')
         gui.elements.pit_interact_shrine:render('Use shrines',
             'Interact with shrines encountered inside the pit.')
         gui.elements.pit_tree:pop()
