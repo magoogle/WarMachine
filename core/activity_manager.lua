@@ -102,6 +102,12 @@ M.pick_activity = function (settings_mode)
         local wp = tracker.warplan and tracker.warplan.snapshot
         if not (wp and wp.active and wp.activity) then return nil end
         if wp.activity == 'turnin' then return nil end
+        -- Translate WarPlan's quest-classification strings to the
+        -- activity module's tag.  WarPlan uses 'nightmare' (matching
+        -- the WarPlans_QST_NightmareDungeon quest name); the
+        -- activities/nmd/ module is registered under tag 'nmd'.
+        -- All other activity strings already match their module tag.
+        if wp.activity == 'nightmare' then return 'nmd' end
         return wp.activity
     end
 
