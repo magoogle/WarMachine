@@ -8,6 +8,12 @@ local tracker = {
     last_zone           = nil,
     bot_done            = false,
 
+    -- Tracks whether WarMachine has broadcast warmachine_mode=true to the
+    -- sub-plugins. Set/cleared by the broadcaster in main.lua so we only
+    -- write to the sub-plugin checkboxes when the master state actually
+    -- changes (debouncing per-frame writes).
+    warmachine_active   = nil,
+
     warplan = {
         -- Cached read of warplan_state.read() -- refreshed each pulse
         snapshot = nil,

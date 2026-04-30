@@ -11,6 +11,7 @@
 --   helltide  -> HelltideRevampedPlugin
 --   undercity -> WonderCityPlugin
 --   pit       -> ArkhamAsylumPlugin
+--   hordes    -> InfernalHordesPlugin (HordeDev)
 --
 -- Sub-plugins must be installed AND have their own main_toggle ON for
 -- this to work. WarMachine's enable() flips their keybind_toggle on/off
@@ -24,6 +25,47 @@ local mode     = require 'core.mode'
 local task = { name = 'warplan_supervisor', status = nil }
 
 -- ---------------------------------------------------------------------------
+-- Post-boss pit guard.
+--
+-- The pit warplan quest completes the moment the boss dies (the host
+-- removes it from the quest log).  That makes wp.active flip false ~5s
+-- BEFORE ArkhamAsylum has had a chance to walk to the glyph gizmo + run
+-- its upgrade UI.  Without a guard, the supervisor would see "wp inactive
+-- but ArkhamAsylum still on -> disable it" and yank ArkhamAsylum out from
+-- under upgrade_glyph -- the bot stands next to the gizmo doing nothing
+-- because no plugin is enabled to drive the interaction.
+--
+-- Guard: while we're in PIT_*, the gizmo has been spotted, and ArkhamAsylum
+-- hasn't signalled glyph_done yet, refuse to disable any sub-plugin.  Once
+-- glyph_done is true, post_boss.lua takes over and disables ArkhamAsylum
+-- explicitly + fires Next-Obj for exit.
+-- ---------------------------------------------------------------------------
+local function in_pit_zone()
+    local w = get_current_world()
+    local z = w and w.get_current_zone_name and w:get_current_zone_name() or nil
+    return z and z:match('^PIT_') ~= nil
+end
+
+local function pit_post_boss_pending()
+    if not in_pit_zone() then return false end
+    -- Have we entered the post-boss window?  post_boss.lua sets
+    -- glyph_gizmo_seen=true the first frame the gizmo shows up.
+    if not (tracker.pit and tracker.pit.glyph_gizmo_seen) then return false end
+    -- Need ArkhamAsylum's is_glyph_done() to know when to release.
+    -- If it isn't exposed (older ArkhamAsylum without the v0.2 facade
+    -- update), DO NOT engage the guard -- otherwise we'd trap the bot in
+    -- pit forever waiting for a signal that never comes.  Fall through to
+    -- the original pre-fix behavior (supervisor disables when wp.active
+    -- flips off).  User must update ArkhamAsylum/core/external.lua to
+    -- benefit from the post-boss fix.
+    if not (ArkhamAsylumPlugin and ArkhamAsylumPlugin.is_glyph_done) then
+        return false
+    end
+    -- Guard active until ArkhamAsylum signals upgrade complete.
+    return not ArkhamAsylumPlugin.is_glyph_done()
+end
+
+-- ---------------------------------------------------------------------------
 -- Activity -> plugin tag -> plugin-global lookup
 -- ---------------------------------------------------------------------------
 
@@ -32,6 +74,7 @@ local PLUGIN_FOR_ACTIVITY = {
     helltide  = 'helltide',
     undercity = 'wondercity',
     pit       = 'arkhamasylum',
+    hordes    = 'hordedev',
 }
 
 local function get_plugin(tag)
@@ -39,7 +82,27 @@ local function get_plugin(tag)
     if tag == 'helltide'     then return HelltideRevampedPlugin end
     if tag == 'wondercity'   then return WonderCityPlugin end
     if tag == 'arkhamasylum' then return ArkhamAsylumPlugin end
+    if tag == 'hordedev'     then return InfernalHordesPlugin end
     return nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Internal-module check: when WarMachine's own activities/<tag>/api.lua is
+-- loaded for the warplan activity, the legacy external plugin (Arkham,
+-- WonderCity, etc.) should NOT be toggled on -- the internal module
+-- handles in-zone gameplay via activity_manager.pulse(WARPLAN).
+-- This lets the two coexist gracefully during the transition: external
+-- plugins still installed get correctly disabled by us; once they're
+-- uninstalled (cleanup phase), this just becomes a no-op.
+-- ---------------------------------------------------------------------------
+local function activity_has_internal_module(wp_activity)
+    -- Map warplan activity name -> activity_manager tag
+    local tag = wp_activity
+    if wp_activity == 'nightmare' then tag = 'nmd' end
+    if not tag then return false end
+    local ok, am = pcall(require, 'core.activity_manager')
+    if not ok or not am or not am.is_activity_loaded then return false end
+    return am.is_activity_loaded(tag)
 end
 
 local function classify_zone(zone)
@@ -48,6 +111,9 @@ local function classify_zone(zone)
     if zone:match('^DGN_') then return 'dungeon' end
     if zone:match('^X1_Undercity_') then return 'undercity' end
     if zone:match('^PIT_') then return 'pit' end
+    -- Infernal Hordes arena (S05_BSK_Prototype02 historically; if the host
+    -- ever splits Hordes into multiple zone names, prefix-match here).
+    if zone == 'S05_BSK_Prototype02' or zone:match('^S05_BSK_') then return 'hordes' end
     return 'overworld'
 end
 
@@ -59,6 +125,7 @@ local function in_activity_zone(zone, activity)
     if activity == 'undercity' then return zc == 'undercity' end
     if activity == 'helltide'  then return zc == 'overworld' end
     if activity == 'pit'       then return zc == 'pit'       end
+    if activity == 'hordes'    then return zc == 'hordes'    end
     return false
 end
 
@@ -69,24 +136,36 @@ end
 
 local function enable_plugin(tag)
     if tracker.warplan.active_sub_plugin == tag then return end
-    -- Disable whatever was running before
+    -- Disable whatever was running before. pcall so a buggy disable() in
+    -- one sub-plugin doesn't prevent us from updating active_sub_plugin
+    -- and trap WarMachine in a thrash loop.
     if tracker.warplan.active_sub_plugin then
         local old = get_plugin(tracker.warplan.active_sub_plugin)
         if old and old.disable then
             console.print('[WarMachine] disabling sub-plugin: ' .. tracker.warplan.active_sub_plugin)
-            old.disable()
+            local ok, err = pcall(old.disable)
+            if not ok then
+                console.print('[WarMachine] disable error (' ..
+                    tracker.warplan.active_sub_plugin .. '): ' .. tostring(err))
+            end
         end
     end
-    -- Enable the new one
+    -- Enable the new one (also pcall'd for the same reason).
     if tag then
         local p = get_plugin(tag)
         if p and p.enable then
             console.print('[WarMachine] enabling sub-plugin: ' .. tag)
-            p.enable()
+            local ok, err = pcall(p.enable)
+            if not ok then
+                console.print('[WarMachine] enable error (' .. tag .. '): ' .. tostring(err))
+            end
         else
             console.print('[WarMachine] sub-plugin not loaded: ' .. tag)
         end
     end
+    -- Always update the tracker, even on enable/disable error: otherwise
+    -- supervisor.shouldExecute keeps seeing active != target_tag and we
+    -- re-fire the same broken enable every pulse.
     tracker.warplan.active_sub_plugin = tag
 end
 
@@ -109,6 +188,10 @@ task.shouldExecute = function ()
         return false
     end
 
+    -- Pit post-boss guard: don't touch sub-plugins while ArkhamAsylum is
+    -- mid-upgrade.  See pit_post_boss_pending() comment.
+    if pit_post_boss_pending() then return false end
+
     -- Yield to any in-flight click/walk task
     if tracker.warplan.test.pending        then return false end
     if tracker.warplan.next_obj.pending    then return false end
@@ -116,7 +199,47 @@ task.shouldExecute = function ()
     if tracker.warplan.start_cycle.pending then return false end
     if tracker.undercity.enter.pending     then return false end
 
-    return true   -- always run when no other task is active in War Plan mode
+    -- Supervisor's job is purely sub-plugin enable/disable. It has NO
+    -- transit logic -- moving the player between zones is dispatch's job
+    -- via Next-Obj. We claim the pulse only when there's actual
+    -- orchestration work to do; otherwise yield so dispatch can run.
+    --
+    -- Cases that need work:
+    --   * Active warplan + in matching activity zone + sub-plugin not yet
+    --     enabled (or wrong one enabled) -> enable correct one
+    --   * Sub-plugin currently enabled but should be off (no warplan,
+    --     turnin phase, or wrong zone for activity) -> disable it
+    -- All other cases: nothing to do, yield to dispatch.
+    local wp     = tracker.warplan.snapshot
+    local zone   = get_current_world() and get_current_world():get_current_zone_name() or nil
+    local active = tracker.warplan.active_sub_plugin
+
+    -- No active warplan -> sub-plugin must be off
+    if not (wp and wp.active and wp.quest) then
+        return active ~= nil   -- claim only if cleanup needed
+    end
+
+    -- Turn-in phase -> sub-plugin must be off
+    if wp.activity == 'turnin' then
+        return active ~= nil
+    end
+
+    local target_tag = PLUGIN_FOR_ACTIVITY[wp.activity]
+    if not target_tag then
+        -- Unknown activity. Disable any leftover sub-plugin; otherwise yield.
+        return active ~= nil
+    end
+
+    if in_activity_zone(zone, wp.activity) then
+        -- We're in the activity zone -> sub-plugin must be the matching one.
+        return active ~= target_tag
+    end
+
+    -- Active warplan but wrong zone for it. Sub-plugin must be off so it
+    -- doesn't fight WarMachine's transit (e.g. SigilRunner trying to run
+    -- from a town zone). Otherwise yield to dispatch (which will fire
+    -- Next-Obj to teleport us to the activity).
+    return active ~= nil
 end
 
 task.Execute = function ()
@@ -149,13 +272,25 @@ task.Execute = function ()
     end
 
     if in_activity_zone(zone, wp.activity) then
-        -- Hand off to the sub-plugin. For pit specifically, ArkhamAsylum
-        -- stays enabled even after the boss dies so its upgrade_glyph task
-        -- handles the gizmo. tasks/pit/post_boss waits for the gizmo to
-        -- despawn (= upgrade complete), then disables the sub-plugin and
-        -- fires Next-Obj for exit.
-        enable_plugin(target_tag)
-        task.status = 'sub-plugin: ' .. target_tag
+        -- If WarMachine's own activities/<tag>/api.lua is loaded, the
+        -- internal module drives in-zone gameplay via activity_manager
+        -- (called from main.lua's WARPLAN dispatch).  We also disable any
+        -- still-installed legacy external plugin so they don't fight.
+        if activity_has_internal_module(wp.activity) then
+            if tracker.warplan.active_sub_plugin then
+                enable_plugin(nil)   -- shut off any legacy external plugin
+            end
+            task.status = 'internal-module: ' .. tostring(wp.activity)
+        else
+            -- Legacy path: enable the external sub-plugin (Arkham,
+            -- WonderCity, etc.).  For pit specifically, ArkhamAsylum
+            -- stays enabled even after the boss dies so its upgrade_glyph
+            -- task handles the gizmo.  tasks/pit/post_boss waits for the
+            -- gizmo to despawn (= upgrade complete), then disables the
+            -- sub-plugin and fires Next-Obj for exit.
+            enable_plugin(target_tag)
+            task.status = 'sub-plugin: ' .. target_tag
+        end
     else
         -- Wrong zone for the activity. Sub-plugin must be off so it doesn't
         -- run from the wrong town (e.g. SigilRunner tries to consume a

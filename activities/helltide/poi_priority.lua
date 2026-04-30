@@ -1,0 +1,188 @@
+-- ---------------------------------------------------------------------------
+-- activities/helltide/poi_priority.lua
+--
+-- The brain of the new helltide module.  Replaces ~1000 lines of waypoint
+-- patrols + frontier-BFS exploration in the old plugin with a priority
+-- queue over actors in StaticPather's merged WarMap data.
+--
+-- Each POI is a table:
+--   { kind, skin, x, y, z, floor,            -- copied from StaticPather actor entry
+--     score,                                 -- computed priority (higher = pick first)
+--     dist,                                  -- meters from player at score time
+--     blocked_reason }                       -- string | nil; why we can't currently take it
+--
+-- The priority queue is built fresh every ~1.5s (POI_REBUILD_INTERVAL_S).
+-- Stale beyond that and we recompute -- distances change as the player
+-- moves and cinder counts as we open chests.
+-- ---------------------------------------------------------------------------
+
+local enums = require 'activities.helltide.data.enums'
+
+local M = {}
+
+local POI_REBUILD_INTERVAL_S = 1.5
+
+-- ---------------------------------------------------------------------------
+-- Type weights.  Bigger = pick first regardless of distance.  Tortured
+-- Gifts (cinder chests) trump everything else when affordable; pyres
+-- trump in maiden mode; shrines and ores tie on a distance contest.
+-- ---------------------------------------------------------------------------
+local TYPE_WEIGHT = {
+    chest_helltide_targeted = 1000,   -- Tortured Gifts (rare, costs cinders)
+    chest_helltide_random   =  800,   -- standard helltide chest (free)
+    chest_helltide_silent   =  700,   -- silent chest (key required)
+    chest                   =  500,   -- generic chest
+    pyre                    =  600,   -- maiden pyre (boost in maiden_mode below)
+    shrine                  =  300,
+    ore                     =  150,
+    herb                    =  150,
+    objective               =  400,   -- random world events
+    portal_helltide         =  900,   -- maiden portal (chambers)
+}
+
+local DEFAULT_WEIGHT = 100
+
+-- Distance falls off linearly: 100m far -> -50 score, 0m near -> 0 score.
+-- So a 1000-weight Tortured Gift at 100m beats a 800-weight chest at 0m.
+-- Tune coefficient to taste; lower = more "go to whatever's closest".
+local DISTANCE_COEFF = 0.5
+
+-- ---------------------------------------------------------------------------
+-- Helpers
+-- ---------------------------------------------------------------------------
+local function get_cinders()
+    if get_helltide_coin_cinders then
+        local ok, n = pcall(get_helltide_coin_cinders)
+        if ok and type(n) == 'number' then return n end
+    end
+    return 0
+end
+
+local function chest_cost(poi)
+    if not poi.skin then return nil end
+    return enums.chest_types[poi.skin]
+end
+
+local function dist2_player(poi)
+    local lp = get_local_player()
+    if not lp then return math.huge end
+    local pp = lp:get_position()
+    if not pp then return math.huge end
+    local dx = (poi.x or 0) - pp:x()
+    local dy = (poi.y or 0) - pp:y()
+    return dx*dx + dy*dy
+end
+
+-- ---------------------------------------------------------------------------
+-- Score a single POI.  Returns nil if the POI is filterable-out (visited,
+-- toggled-off, unaffordable), else a numeric score.
+-- ---------------------------------------------------------------------------
+local function score_poi(poi, ctx)
+    if ctx.visited[string.format('%s:%d:%d',
+        poi.skin or poi.kind or '?',
+        math.floor(poi.x or 0),
+        math.floor(poi.y or 0))]
+    then
+        return nil   -- already done this run
+    end
+
+    -- Setting-toggle gates
+    if poi.kind == 'chest' or poi.kind == 'chest_helltide_random' or poi.kind == 'chest_helltide_targeted' then
+        if not ctx.settings.do_chests then return nil end
+    elseif poi.kind == 'chest_helltide_silent' then
+        if not ctx.settings.do_silent_chests then return nil end
+    elseif poi.kind == 'ore' then
+        if not ctx.settings.do_ores then return nil end
+    elseif poi.kind == 'herb' then
+        if not ctx.settings.do_herbs then return nil end
+    elseif poi.kind == 'shrine' then
+        if not ctx.settings.do_shrines then return nil end
+    elseif poi.kind == 'pyre' then
+        if not ctx.settings.do_pyres then return nil end
+    elseif poi.kind == 'objective' then
+        if not ctx.settings.do_events then return nil end
+    end
+
+    -- Cinder gate for Tortured Gifts: don't queue chests we can't afford.
+    -- (We still REMEMBER them via tracker so we can come back when we have
+    -- enough cinders -- handled in farm_chest task, not here.)
+    local cost = chest_cost(poi)
+    if cost and cost > 0 then
+        local cinders = ctx.cinders
+        if cinders < cost then
+            return nil   -- not affordable yet
+        end
+    end
+
+    local weight = TYPE_WEIGHT[poi.kind] or DEFAULT_WEIGHT
+
+    -- Maiden mode: pyres + portal_helltide rocket to the top.
+    if ctx.maiden_active then
+        if poi.kind == 'pyre' or poi.kind == 'portal_helltide' then
+            weight = weight + 500
+        end
+    end
+
+    -- Distance penalty
+    local d2 = dist2_player(poi)
+    local d  = math.sqrt(d2)
+    local score = weight - (d * DISTANCE_COEFF)
+    return score, d
+end
+
+-- ---------------------------------------------------------------------------
+-- Build the priority queue.  Caller passes:
+--   tracker        from activities/helltide/tracker.lua (for visited dedup)
+--   settings       from activities/helltide/settings.lua (for toggles)
+--   maiden_active  bool -- true while the maiden event is going
+--
+-- Returns: array of POI tables, sorted by score descending.  Empty array
+-- if StaticPather has no data for this zone (caller falls back to Batmobile).
+-- ---------------------------------------------------------------------------
+M.build = function (tracker, settings, maiden_active)
+    -- Use cache if fresh; rebuilding every pulse churns
+    -- StaticPatherPlugin.get_actors().
+    local now = get_time_since_inject and get_time_since_inject() or 0
+    if tracker.poi_cache and (now - tracker.last_poi_rebuild_t) < POI_REBUILD_INTERVAL_S then
+        return tracker.poi_cache
+    end
+
+    local out = {}
+    if not StaticPatherPlugin or not StaticPatherPlugin.get_actors then
+        tracker.poi_cache = out
+        tracker.last_poi_rebuild_t = now
+        return out
+    end
+
+    local actors = StaticPatherPlugin.get_actors()   -- all kinds, current zone
+    if not actors or #actors == 0 then
+        tracker.poi_cache = out
+        tracker.last_poi_rebuild_t = now
+        return out
+    end
+
+    local ctx = {
+        visited       = tracker.visited,
+        settings      = settings,
+        cinders       = get_cinders(),
+        maiden_active = maiden_active,
+    }
+    for _, a in ipairs(actors) do
+        local s, d = score_poi(a, ctx)
+        if s then
+            local poi = {
+                kind = a.kind, skin = a.skin,
+                x = a.x, y = a.y, z = a.z, floor = a.floor,
+                score = s, dist = d,
+            }
+            out[#out + 1] = poi
+        end
+    end
+
+    table.sort(out, function (a, b) return a.score > b.score end)
+    tracker.poi_cache = out
+    tracker.last_poi_rebuild_t = now
+    return out
+end
+
+return M

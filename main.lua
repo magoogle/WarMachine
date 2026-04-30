@@ -4,8 +4,8 @@
 -- Single entry point that drives the War Plan cycle: opens the WAR PLANS
 -- vendor menu, selects activities, teleports between them via the map's
 -- Next-Obj button, hands each activity off to the matching sub-plugin
--- (SigilRunner / HelltideRevamped / WonderCity / ArkhamAsylum), and
--- claims rewards at Tyrael when complete.
+-- (SigilRunner / HelltideRevamped / WonderCity / ArkhamAsylum / HordeDev),
+-- and claims rewards at Tyrael when complete.
 --
 -- Sub-plugins remain independent and own their in-zone runtime. WarMachine
 -- enables the matching one when the player is in the activity's zone and
@@ -14,12 +14,14 @@
 
 local plugin_label = 'warmachine'
 
-local gui            = require 'gui'
-local settings       = require 'core.settings'
-local task_manager   = require 'core.task_manager'
-local external       = require 'core.external'
-local tracker        = require 'core.tracker'
-local warplan_state  = require 'core.warplan_state'
+local gui              = require 'gui'
+local settings         = require 'core.settings'
+local task_manager     = require 'core.task_manager'
+local external         = require 'core.external'
+local tracker          = require 'core.tracker'
+local warplan_state    = require 'core.warplan_state'
+local mode             = require 'core.mode'
+local activity_manager = require 'core.activity_manager'
 
 local local_player, player_position
 local debounce_time    = nil
@@ -28,6 +30,53 @@ local debounce_timeout = 0
 local update_locals = function ()
     local_player    = get_local_player()
     player_position = local_player and local_player:get_position()
+end
+
+-- ---------------------------------------------------------------------------
+-- Broadcast warmachine_mode to all sub-plugins.
+--
+-- Each sub-plugin (ArkhamAsylum, HelltideRevamped, SigilRunner, WonderCity,
+-- HordeDev) exposes set_warmachine_mode(state) on its plugin global. While ON, the
+-- sub-plugin gates off its own town/entry/exit/transition tasks so
+-- WarMachine can drive the War Plan flow without the sub-plugin fighting
+-- back from a town zone (e.g. SigilRunner trying to consume a sigil while
+-- WarMachine is between activities).
+--
+-- Debounced via tracker.warmachine_active so we only flip the checkboxes
+-- on actual state change. nil-safe when sub-plugins aren't loaded.
+-- ---------------------------------------------------------------------------
+local broadcast_warmachine_mode = function (active)
+    if tracker.warmachine_active == active then return end
+    tracker.warmachine_active = active
+    local broadcast = function (plugin, name)
+        if plugin and plugin.set_warmachine_mode then
+            plugin.set_warmachine_mode(active)
+            if settings.debug_mode then
+                console.print(string.format(
+                    '[WarMachine] %s.set_warmachine_mode(%s)',
+                    name, tostring(active)))
+            end
+        end
+    end
+    broadcast(ArkhamAsylumPlugin,     'ArkhamAsylumPlugin')
+    broadcast(HelltideRevampedPlugin, 'HelltideRevampedPlugin')
+    broadcast(SigilRunnerPlugin,      'SigilRunnerPlugin')
+    broadcast(WonderCityPlugin,       'WonderCityPlugin')
+    broadcast(InfernalHordesPlugin,   'InfernalHordesPlugin')
+end
+
+-- When WarMachine is disabled (or the user changes mode), make sure no
+-- activity is left "active" in the activity_manager -- otherwise the
+-- next enable would skip the activate() step.
+local _last_seen_mode = nil
+local function on_disable_or_mode_change()
+    if (not settings.enabled or not settings.get_keybind_state())
+       and activity_manager.get_active_tag() then
+        activity_manager.shutdown()
+    elseif _last_seen_mode and _last_seen_mode ~= settings.mode then
+        activity_manager.shutdown()
+    end
+    _last_seen_mode = settings.mode
 end
 
 local main_pulse = function ()
@@ -39,6 +88,16 @@ local main_pulse = function ()
     settings:update_settings()
 
     if not local_player then return end
+
+    -- Sync warmachine_mode to sub-plugins whenever WarMachine's "actively
+    -- driving" state changes. We do this BEFORE the enabled-gate so that
+    -- turning WarMachine off correctly clears warmachine_mode on every
+    -- sub-plugin, releasing them to run standalone again.
+    broadcast_warmachine_mode(settings.enabled and settings.get_keybind_state() and true or false)
+
+    -- Detect disable / mode-change so activity_manager can deactivate cleanly.
+    on_disable_or_mode_change()
+
     if not settings.enabled or not settings.get_keybind_state() then return end
 
     if tracker.bot_done then return end
@@ -79,7 +138,30 @@ local main_pulse = function ()
     if local_player:is_dead() then
         revive_at_checkpoint()
     else
-        task_manager.execute_tasks()
+        -- Dispatch by mode.
+        --
+        -- WARPLAN: BOTH paths run.
+        --   * task_manager.execute_tasks() drives WarPlan orchestration
+        --     (vendor menu clicks, Next-Obj teleports, turn-in at Tyrael)
+        --     -- NOT in-zone activity gameplay.
+        --   * activity_manager.pulse(WARPLAN) drives the in-zone activity
+        --     by reading tracker.warplan.snapshot.activity and dispatching
+        --     to the matching internal module (activities/pit/, etc.).
+        --     The two run independently each pulse and don't conflict
+        --     because task_manager's tasks all gate on
+        --     `tracker.warplan.<X>.pending` flags or zone-classification,
+        --     while activity_manager only runs when an activity module's
+        --     shouldExecute() returns true (typically requires being in
+        --     the activity's runtime zone).
+        --
+        -- Standalone modes (PIT/UC/HELLTIDE/NMD/HORDES): only
+        -- activity_manager.  IDLE: nothing.
+        if settings.mode == mode.WARPLAN then
+            task_manager.execute_tasks()
+            activity_manager.pulse(mode.WARPLAN)
+        elseif settings.mode ~= mode.IDLE then
+            activity_manager.pulse(settings.mode)
+        end
     end
 end
 
@@ -154,8 +236,15 @@ local render_pulse = function ()
         settings.plugin_version,
         task_str
     )
+    -- All three overlay lines share the same starting x so they look like
+    -- a coherent left-aligned block. Centering each line by its own length
+    -- with a fixed 5.5 px/char doesn't work across font sizes 20/18/16 --
+    -- smaller fonts end up visibly shifted left of the larger one.
     local x = get_screen_width() / 2 - (#msg * 5.5)
-    local y = 80
+    -- y=200 keeps the WarMachine overlay clear of sub-plugin status lines
+    -- (HelltideRevamped, ArkhamAsylum, WonderCity, etc.) which all draw
+    -- around y=60..120 at the top of the screen.
+    local y = 200
     graphics.text_2d(msg, vec2:new(x, y), 20, color_white(255))
 
     -- Active War Plan summary (if any) -- driven from the cached snapshot.
@@ -168,16 +257,14 @@ local render_pulse = function ()
         end
         local wp_msg = string.format('Active WarPlan: %s [%s]%s',
             wp.quest.name, tostring(wp.activity), progress_str)
-        local wpx = get_screen_width() / 2 - (#wp_msg * 5.5)
-        graphics.text_2d(wp_msg, vec2:new(wpx, y + 24), 18, color_yellow(220))
+        graphics.text_2d(wp_msg, vec2:new(x, y + 24), 18, color_yellow(220))
 
         -- First non-"War Plan: N/M" objective text -- that's the actionable line
         for _, o in ipairs(wp.quest.objectives or {}) do
             if o.text and not o.text:find('War Plan:') then
                 local t = o.text
                 if #t > 80 then t = t:sub(1, 77) .. '...' end
-                local ox = get_screen_width() / 2 - (#t * 5.5)
-                graphics.text_2d(t, vec2:new(ox, y + 46), 16, color_white(200))
+                graphics.text_2d(t, vec2:new(x, y + 46), 16, color_white(200))
                 break
             end
         end

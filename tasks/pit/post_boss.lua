@@ -10,8 +10,15 @@
 -- Detection sequence:
 --   1. While in PIT_* and Gizmo_Paragon_Glyph_Upgrade is in stream:
 --      mark glyph_gizmo_seen, do nothing (ArkhamAsylum handles upgrade).
---   2. When the gizmo despawns AND we previously saw it:
---      disable ArkhamAsylum, fire Next-Obj, reset state.
+--   2. When ArkhamAsylumPlugin.is_glyph_done() returns true:
+--      hard-disable Batmobile (so it stops drifting during the map+tp
+--      sequence), disable ArkhamAsylum, fire Next-Obj, reset state.
+--
+-- Why we wait on is_glyph_done() instead of "gizmo despawned":
+--   The actor stream can briefly drop the gizmo during ArkhamAsylum's
+--   interact_object() call, which previously raced the post-boss exit
+--   ahead of the actual upgrade.  is_glyph_done() flips when ArkhamAsylum
+--   has confirmed the upgrade UI processed all upgradable glyphs.
 -- ---------------------------------------------------------------------------
 
 local settings = require 'core.settings'
@@ -40,8 +47,8 @@ end
 task.shouldExecute = function ()
     if settings.mode ~= mode.WARPLAN then return false end
     if not in_pit() then return false end
-    -- Fire either while the gizmo is visible (just to mark seen) OR after
-    -- it despawns if we saw it earlier (handle exit).
+    -- Fire while the gizmo is visible (mark seen) OR after we've seen it
+    -- earlier (so we keep polling until ArkhamAsylum signals glyph_done).
     return find_glyph_gizmo() ~= nil or tracker.pit.glyph_gizmo_seen == true
 end
 
@@ -61,8 +68,22 @@ task.Execute = function ()
         return
     end
 
-    -- Gizmo is gone AND we saw it earlier -> upgrade complete.
-    -- Take over: disable sub-plugin, kill Batmobile drift, fire Next-Obj.
+    -- Gizmo not in stream this pulse.  Don't trust that signal alone --
+    -- it briefly drops during ArkhamAsylum's interact_object() and would
+    -- race-trigger the exit before the upgrade actually completed.  Wait
+    -- for ArkhamAsylum to confirm via tracker.glyph_done.
+    local arkham_done = ArkhamAsylumPlugin
+        and ArkhamAsylumPlugin.is_glyph_done
+        and ArkhamAsylumPlugin.is_glyph_done()
+    if not arkham_done then
+        task.status = 'glyph upgrade in progress'
+        return
+    end
+
+    -- Both signals confirm: upgrade complete.
+    -- Take over: hard-disable Batmobile (pause is futile -- main.lua's
+    -- freeroam loop unconditionally unpauses it), disable ArkhamAsylum,
+    -- fire Next-Obj.
     if tracker.warplan.active_sub_plugin then
         if ArkhamAsylumPlugin and ArkhamAsylumPlugin.disable then
             console.print('[WarMachine] pit: glyph upgrade complete -- disabling ArkhamAsylum')
@@ -71,8 +92,14 @@ task.Execute = function ()
         tracker.warplan.active_sub_plugin = nil
     end
 
-    if BatmobilePlugin and BatmobilePlugin.pause then
-        BatmobilePlugin.pause('warmachine')
+    -- Hard stop Batmobile so it doesn't keep wandering during the map+tp
+    -- sequence.  Falls back to pause() for older Batmobile builds.
+    if BatmobilePlugin then
+        if BatmobilePlugin.disable then
+            BatmobilePlugin.disable('warmachine')
+        elseif BatmobilePlugin.pause then
+            BatmobilePlugin.pause('warmachine')
+        end
     end
 
     if not tracker.warplan.next_obj.pending then

@@ -4,8 +4,8 @@
 -- Exposes:
 --   warplan_state.read()  -> { active = bool, quest = {...}, activity = string|nil }
 --
--- Where activity is one of: 'nightmare' | 'helltide' | 'undercity' | 'unknown'
--- derived from the quest name suffix.
+-- Where activity is one of: 'nightmare' | 'helltide' | 'undercity' | 'hordes'
+-- | 'pit' | 'turnin' | 'unknown' -- derived from the quest name suffix.
 --
 -- Detection rule:
 --   Iterate get_quests(); the first quest whose name starts with
@@ -59,6 +59,17 @@ local ACTIVITY_PATTERNS = {
     { pat = 'Nightmare',        activity = 'nightmare' },
     { pat = 'Helltide',         activity = 'helltide'  },
     { pat = 'Undercity',        activity = 'undercity' },
+    -- Pit war plans (S07+). Quest-name pattern is a guess based on the
+    -- pattern Blizzard uses for the other activities; loosen here if a
+    -- live observation shows a different suffix.
+    { pat = 'Pit',              activity = 'pit'       },
+    -- Hordes: confirmed quest name is `WarPlans_QST_InfernalHordes_BSK`
+    -- (BSK is a variant suffix -- substring match keeps us robust to
+    -- other variants like `_BTC` etc.). 'InfernalHordes' (plural)
+    -- comes first as the more specific match.
+    { pat = 'InfernalHordes',   activity = 'hordes'    },
+    { pat = 'InfernalHorde',    activity = 'hordes'    },
+    { pat = 'Horde',            activity = 'hordes'    },
 }
 
 local function classify_activity(name)

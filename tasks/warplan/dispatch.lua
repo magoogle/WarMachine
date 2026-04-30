@@ -42,20 +42,28 @@ local function classify_zone(zone)
     if zone:match('^DGN_') then return 'dungeon' end
     if zone:match('^X1_Undercity_') then return 'undercity' end
     if zone:match('^PIT_') then return 'pit' end
+    if zone == 'S05_BSK_Prototype02' or zone:match('^S05_BSK_') then return 'hordes' end
     return 'overworld'    -- could be helltide, world boss zone, or unrelated
 end
 
 -- True when current zone matches the kind of place the active war plan
--- activity progresses in. Includes intermediate zones (e.g. Temis for
--- Undercity / Pit, where WarMachine's own entry tasks handle the obelisk
--- + portal flow before the sub-plugin takes over inside the dungeon).
+-- activity progresses in. We deliberately do NOT include 'temis' for
+-- undercity / pit even though the obelisks live there: when in Temis
+-- without the obelisk in actor stream, dispatch needs to fire Next-Obj
+-- to map-teleport us right to the obelisk. The entry tasks
+-- (enter_undercity, pit/enter) yield to dispatch when their actor isn't
+-- in stream, then claim the pulse once the actor appears.
 local function zone_matches_activity(zone, activity)
     local zc = classify_zone(zone)
-    if activity == 'nightmare' then return zc == 'dungeon' end
-    if activity == 'undercity' then return zc == 'undercity' or zc == 'temis' end
+    if activity == 'nightmare' then return zc == 'dungeon'   end
+    if activity == 'undercity' then return zc == 'undercity' end
     if activity == 'helltide'  then return zc == 'overworld' end
-    if activity == 'pit'       then return zc == 'pit' or zc == 'temis' end
-    if activity == 'turnin'    then return zc == 'temis'    end
+    if activity == 'pit'       then return zc == 'pit'       end
+    -- Hordes: the war plan teleport drops us straight in the arena; if that
+    -- ever changes to land us in Caldeum first, add `or zc == 'overworld'`
+    -- and let HordeDev's walking_to_horde drive the gate (un-gate that task).
+    if activity == 'hordes'    then return zc == 'hordes'    end
+    if activity == 'turnin'    then return zc == 'temis'     end
     return false
 end
 

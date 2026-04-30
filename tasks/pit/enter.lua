@@ -67,14 +67,33 @@ local function crafter_in_stream()
 end
 
 task.shouldExecute = function ()
-    if settings.mode ~= mode.PIT then return false end
+    -- Drive Pit entry only when:
+    --   * War Plan mode is active (orchestrator-only design -- mode.PIT
+    --     was removed when standalone Pit was handed back to ArkhamAsylum)
+    --   * Active war plan activity is 'pit'
+    --   * settings.pit.auto_enter is on (lets the user disable WarMachine
+    --     pit driving while still using sub-plugin orchestration)
+    if settings.mode ~= mode.WARPLAN then return false end
     if not (settings.pit and settings.pit.auto_enter) then return false end
+    local wp = tracker.warplan and tracker.warplan.snapshot
+    if not (wp and wp.active and wp.activity == 'pit') then return false end
     if in_pit() then return false end
-    -- Fire whenever we're either in the named Pit hub OR the crafter is
-    -- already in stream (handles zone-name variants, sub-zones, manual
-    -- positioning).
-    if not (in_pit_hub() or crafter_in_stream()) then return false end
-    return true
+    -- Yield to other in-flight click sequences so we don't fight them.
+    if tracker.warplan.test.pending        then return false end
+    if tracker.warplan.next_obj.pending    then return false end
+    if tracker.warplan.turn_in.pending     then return false end
+    if tracker.warplan.start_cycle.pending then return false end
+    if tracker.undercity.enter.pending     then return false end
+    -- Only claim the pulse when something is actionable in stream: the
+    -- Pit-key Crafter NPC, the spawned portal, or an open vendor menu
+    -- (player just clicked the crafter and we're waiting on the pit-level
+    -- selection). If none are visible (player teleported far from the
+    -- crafter after war plan accept), yield to dispatch so it can fire
+    -- Next-Obj to map-teleport us right to the crafter.
+    if menu_open()         then return true  end
+    if get_portal()        then return true  end
+    if crafter_in_stream() then return true  end
+    return false
 end
 
 task.Execute = function ()

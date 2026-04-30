@@ -1,22 +1,28 @@
 -- ---------------------------------------------------------------------------
--- WarMachine settings -- orchestrator only.
--- Sub-plugin settings (sigil tier, helltide chests, pit level, etc.) live
--- in their respective sub-plugin GUIs, not here.
+-- WarMachine settings -- unified bot.
+-- Activity-specific settings (per-mode tuning) live under settings.<activity>
+-- and are populated from each activities/<name>/settings.lua module's GUI
+-- bindings.  This file owns only the top-level mode + the WarPlan/Pit/UC
+-- click-points the orchestrator drives directly.
 -- ---------------------------------------------------------------------------
 
-local gui = require 'gui'
+local gui  = require 'gui'
+local mode = require 'core.mode'
 
 local settings = {
     plugin_label   = gui.plugin_label,
     plugin_version = gui.plugin_version,
 
     enabled    = false,
-    mode       = 1,   -- default to War Plan
+    mode       = mode.WARPLAN,   -- default to War Plan; user can pick from dropdown
     debug_mode = false,
 
     -- War Plan automation namespace + Undercity click-points
     warplan   = {},
     undercity = {},
+    -- Pit (War Plan) settings. Populated from gui.elements.pit_*
+    -- Only used by tasks/pit/enter.lua when a Pit war plan is active.
+    pit       = { auto_enter = true, level = 1 },
 }
 
 settings.get_keybind_state = function ()
@@ -35,17 +41,17 @@ local _logged_dep_warning = false
 settings.update_settings = function ()
     local toggle_state  = gui.elements.main_toggle:get()
     settings.debug_mode = gui.elements.debug_mode:get()
-    -- settings.mode stays at its initial default (1 = War Plan). The
-    -- combo dropdown was removed; WarMachine is War Plan only.
+    -- Read run mode from the dropdown.
+    settings.mode = mode.from_index(gui.elements.mode_select:get())
 
-    -- Gate enable on all sub-plugins being present. Force off otherwise.
+    -- Gate enable on the (now-much-shorter) hard-required dependency list.
+    -- Currently only Batmobile is required; everything else is internal or
+    -- optional.
     if toggle_state and not gui.has_all_dependencies() then
         if not _logged_dep_warning then
             local missing = gui.get_missing_dependencies()
-            console.print('[WarMachine] DISABLED: missing sub-plugins -> ' ..
+            console.print('[WarMachine] DISABLED: missing required plugin -> ' ..
                 table.concat(missing, ', '))
-            console.print('[WarMachine] Install each script into scripts/ ' ..
-                '(folder names tolerate -v1.0 etc. suffixes).')
             _logged_dep_warning = true
         end
         settings.enabled = false
@@ -93,6 +99,12 @@ settings.update_settings = function ()
             label = 'Open Portal',
         },
     }
+
+    -- Pit entry (war-plan Pit entry from Skov_Temis Pit Obelisk).
+    -- Standalone Pit (ArkhamAsylum) still uses legacy Cerrigar; this
+    -- table only feeds WarMachine's tasks/pit/enter.lua.
+    settings.pit.auto_enter = gui.elements.pit_auto_enter:get()
+    settings.pit.level      = gui.elements.pit_level:get()
 end
 
 return settings

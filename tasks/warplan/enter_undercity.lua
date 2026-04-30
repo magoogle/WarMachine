@@ -54,23 +54,36 @@ local function reset_pending(state)
     state.send_enter_at    = nil
 end
 
+-- Helper: is at least one entry actor in stream?  We only claim the pulse
+-- when there's something to act on locally. If none of the obelisk / portal
+-- are in stream and the tribute UI isn't open, we yield to dispatch so it
+-- can fire Next-Obj and map-teleport us right to the obelisk.
+local function has_any_entry_actor()
+    if menu_open() then return true end
+    if interact.find_by_skin(PORTAL_SKIN, true)  then return true end
+    if interact.find_by_skin(OBELISK_SKIN, true) then return true end
+    return false
+end
+
 task.shouldExecute = function ()
     local state = tracker.undercity.enter
 
-    -- Yield to other in-flight click sequences
+    -- Yield to other in-flight click sequences. (tracker.nmd was removed
+    -- when WarMachine pivoted to the sub-plugin orchestrator; SigilRunner
+    -- handles sigil consumption inside its own task loop now.)
     local yielding = tracker.warplan.test.pending
        or tracker.warplan.next_obj.pending
        or tracker.warplan.turn_in.pending
        or tracker.warplan.start_cycle.pending
-       or tracker.nmd.use_sigil.pending
 
     local should_fire = not yielding
         and (settings.undercity == nil or settings.undercity.auto_enter ~= false)
 
     if should_fire then
-        -- Trigger conditions:
-        --   (a) War Plan mode + active warplan activity == 'undercity'
-        --   (b) Standalone Undercity mode
+        -- Fires only when: in Skov_Temis AND War Plan mode AND active
+        -- warplan activity is 'undercity'. Standalone Undercity mode was
+        -- removed when WarMachine pivoted to the sub-plugin orchestrator
+        -- (WonderCity owns standalone Undercity now).
         local zone = get_current_world() and get_current_world():get_current_zone_name() or nil
         if zone ~= 'Skov_Temis' then should_fire = false end
 
@@ -80,15 +93,20 @@ task.shouldExecute = function ()
                 if not (wp and wp.active and wp.activity == 'undercity') then
                     should_fire = false
                 end
-            elseif settings.mode == mode.UNDERCITY then
-                -- Standalone -- fire whenever we're in Temis. The dungeon
-                -- consumes a tribute key automatically when the portal opens.
-                -- (No tribute-key check yet; if user runs UC mode without
-                -- keys the portal-open click will simply fail.)
             else
-                should_fire = false   -- not WarPlan-undercity nor standalone-undercity
+                should_fire = false
             end
         end
+    end
+
+    -- If we're in the right zone for the right activity but nothing is in
+    -- actor stream (player teleported far from the obelisk after accepting
+    -- the war plan), yield. Dispatch will fire Next-Obj to map-teleport us
+    -- right to the obelisk; on the next pulse the actor will be in stream
+    -- and we'll claim again.
+    if should_fire and not has_any_entry_actor() then
+        if state.pending then reset_pending(state) end
+        return false
     end
 
     if not should_fire then
