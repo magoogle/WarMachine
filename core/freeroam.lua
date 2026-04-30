@@ -69,6 +69,18 @@ return function (caller)
             end
             task.last_enable_t = now
         end
+        -- Re-enable orbwalker auto-attack while wandering.  Other tasks
+        -- (interact_poi, open_chest, portal-click) call
+        -- set_clear_toggle(false) right before they click an actor so the
+        -- click doesn't get hijacked into an attack.  After they finish,
+        -- nothing flips it back on -- so a "freeroam takes the pulse"
+        -- transition leaves the bot walking past mobs without attacking
+        -- (user-reported: 'helltides walking around now, but its not
+        -- killing anything').  Set it true here every pulse so combat
+        -- resumes the moment we're not actively clicking something.
+        if orbwalker and orbwalker.set_clear_toggle then
+            orbwalker.set_clear_toggle(true)
+        end
         task.status = 'batmobile freeroam (' .. caller .. ')'
     end
 

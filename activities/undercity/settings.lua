@@ -18,6 +18,11 @@ local M = {
     auto_reset_after  = 600,
     exit_after_chest  = true,
 
+    -- Speed-run: once attunement orbs are at max (hearth_count >= max_hearths),
+    -- skip enticements / shrines / mid-floor chests and beeline the floor
+    -- switch -> next floor -> boss.  Mid-run rewards are wasted at 4/4 anyway.
+    speed_run         = false,
+
     -- auto_mount removed: undercity floors are tight + combat-dense.
     -- Helltide is the only activity exposing the mount option.
 
@@ -37,6 +42,7 @@ M.update = function ()
     M.enticement_timeout = bget('uc_enticement_timeout', 4)
     M.auto_reset_after  = bget('uc_auto_reset_after',  600)
     M.exit_after_chest  = bget('uc_exit_after_chest',  true)
+    M.speed_run         = bget('uc_speed_run',         false)
     M.debug_mode        = bget('debug_mode',           false)
 end
 

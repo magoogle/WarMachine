@@ -47,6 +47,19 @@ local function score_poi(poi, ctx)
         math.floor(poi.y or 0))
     if ctx.visited[key] then return nil end
 
+    -- Speed-run mode: once the attunement orb count is at the cap (4/4 by
+    -- default), additional enticements / shrines / mid-floor chests don't
+    -- buy us any more rewards, so beeline the floor switch + boss room.
+    -- Only undercity_exit (floor-progression switch) is left in the
+    -- priority list; goto_chest is a separate task that handles the
+    -- post-boss attunement chest.
+    if ctx.settings.speed_run
+       and ctx.hearth_count >= ctx.settings.max_hearths
+       and poi.kind ~= 'undercity_exit'
+    then
+        return nil
+    end
+
     if poi.kind == 'chest' or poi.kind == 'chest_helltide_random' then
         if not ctx.settings.do_chests then return nil end
     elseif poi.kind == 'enticement' then

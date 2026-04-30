@@ -132,6 +132,7 @@ gui.elements = {
     uc_do_chests                   = cb(true, 'uc_do_chests'),
     uc_do_enticements              = cb(true, 'uc_do_enticements'),
     uc_exit_after_chest            = cb(true, 'uc_exit_after_chest'),
+    uc_speed_run                   = cb(false,'uc_speed_run'),
     uc_kill_range                  = si(5,   60,   25, 'uc_kill_range'),
     uc_boss_intro_delay            = si(0,   30,    3, 'uc_boss_intro_delay'),
     uc_max_hearths                 = si(0,    8,    4, 'uc_max_hearths'),
@@ -445,6 +446,8 @@ gui.render = function ()
         gui.elements.uc_enticement_timeout:render('Enticement timeout (s)', 'How long to wait at each beacon/hearth')
         render_menu_header('Run lifecycle')
         gui.elements.uc_exit_after_chest:render('Exit after chest', 'Warp out / reset after the attunement chest is looted')
+        gui.elements.uc_speed_run:render('Speed run',
+            'Once attunement orbs hit max (4/4 by default), skip enticements / shrines / mid-floor chests and beeline floor switches + boss room.  Mid-run rewards are wasted at 4/4 anyway.')
         gui.elements.uc_auto_reset_after:render('Auto-reset after (s)', 'Safety net')
         gui.elements.uc_tree:pop()
     end
