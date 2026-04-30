@@ -42,7 +42,11 @@ local REQUIRED_PLUGINS = {
     { folder = 'Batmobile', global = 'BatmobilePlugin' },
 }
 local OPTIONAL_PLUGINS = {
-    { folder = 'StaticPather',     global = 'StaticPatherPlugin'     },
+    -- WarPath (renamed from StaticPather).  We accept either folder name
+    -- and either global; main.lua of the plugin sets BOTH globals as
+    -- aliases so existing references keep working through the rename.
+    { folder = 'WarPath',          global = 'WarPathPlugin',
+      alt_folder = 'StaticPather', alt_global = 'StaticPatherPlugin' },
     { folder = 'AlfredTheButler',  global = 'AlfredTheButlerPlugin'  },
     { folder = 'Looteer*',         global = 'LooteerPlugin'          },
 }
@@ -271,10 +275,17 @@ gui.render = function ()
         render_menu_header('  Install Batmobile in scripts/ then re-enable WarMachine.')
         render_menu_header('==========================================================')
     end
-    -- Soft warnings for optional integrations
+    -- Soft warnings for optional integrations.  WarPath / StaticPather
+    -- transition: accept either folder + either global so users on
+    -- whichever side of the rename don't get a spurious "missing
+    -- integration" warning.
     local missing_optional = {}
     for _, dep in ipairs(OPTIONAL_PLUGINS) do
-        if _G[dep.global] == nil then
+        local present = _G[dep.global] ~= nil
+        if not present and dep.alt_global then
+            present = _G[dep.alt_global] ~= nil
+        end
+        if not present then
             missing_optional[#missing_optional + 1] = dep.folder
         end
     end
