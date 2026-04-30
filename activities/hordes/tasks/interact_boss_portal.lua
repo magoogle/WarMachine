@@ -1,20 +1,24 @@
 -- activities/hordes/tasks/interact_boss_portal.lua
 --
--- After the wave-loop completes (locked door appears, all aether collected),
--- a boss-arena portal pylon spawns.  The user picks Bartuc or Council via
--- the regular pylon UI -- but the pylon names differ from boon pylons:
+-- After the wave-loop completes there are TWO interactables in sequence:
 --
---   BSK_Pyl_Bartuc       -- "Bartuc" boss-arena portal (alt path)
---   BSK_Pyl_Council      -- "Council of Hatred" boss-arena portal (default)
+-- 1. Locked boss-room door -- separates the wave arena from the pylon room.
+--    Skins observed (HordeDev/tasks/horde.lua:254-256):
+--       Hell_Fort_BSK_Door_A_01_Dyn          (the actual door actor)
+--       BSK_MapIcon_LockedDoor               (presence indicator on map)
+--    DGN_Standard_Door_Lock_Sigil_Ancients_Zak_Evil = "still in wave",
+--    used as a NEGATIVE signal -- if this is up, waves aren't done yet.
 --
--- Both teleport the player to the boss arena.  We prefer Bartuc when
--- settings.prefer_bartuc is set (matches HordeDev's `do_bartuc` toggle),
--- with a 6-second fallback to Council if Bartuc fails to interact.
+-- 2. Bartuc / Council pylon-choice gizmo -- inside the pylon room.  Click
+--    one to teleport to the boss arena.
+--    Skins observed (HordeDev/data/enums.lua:32-34):
+--       BSK_PylChoiceGizmo_SelectBartuc      (alt boss path)
+--       BSK_PylChoiceGizmo_SelectCouncil     (default Council of Hatred)
 --
--- The regular interact_pylon task ignores these because their names aren't
--- in pylon_priority.lua (which is the boon list).  This task is registered
--- in runner.lua AFTER interact_pylon so boon-picking takes priority during
--- between-wave choices.
+-- We handle both in this one task -- check door first, then pylons.
+-- Bartuc has a 6s give-up window (HordeDev's bartuc_pylon_give_up_time);
+-- if Bartuc was preferred but didn't open after that long, fall back to
+-- Council.
 
 local move     = require 'core.move'
 local settings = require 'activities.hordes.settings'
@@ -30,19 +34,32 @@ local task = {
 local CLICK_DEBOUNCE_S      = 3
 local BARTUC_GIVE_UP_S      = 6   -- HordeDev's bartuc_pylon_give_up_time
 
+-- Pylon-choice gizmo skins (from HordeDev data/enums.lua boss_pylons).
+local PYLON_BARTUC  = 'BSK_PylChoiceGizmo_SelectBartuc'
+local PYLON_COUNCIL = 'BSK_PylChoiceGizmo_SelectCouncil'
+
+local function find_locked_door()
+    if not actors_manager or not actors_manager.get_all_actors then return nil end
+    local door, locked, in_wave
+    for _, a in pairs(actors_manager:get_all_actors()) do
+        local sn = a.get_skin_name and a:get_skin_name() or ''
+        if sn == 'Hell_Fort_BSK_Door_A_01_Dyn' then door = a end
+        if sn == 'BSK_MapIcon_LockedDoor'      then locked = true end
+        if sn == 'DGN_Standard_Door_Lock_Sigil_Ancients_Zak_Evil' then in_wave = true end
+    end
+    if in_wave or not locked then return nil end
+    return door
+end
+
 local function find_portal(prefer_bartuc)
     if not actors_manager or not actors_manager.get_all_actors then return nil end
     local bartuc, council
     for _, a in pairs(actors_manager:get_all_actors()) do
         local sn = a.get_skin_name and a:get_skin_name() or ''
-        -- Both portals are interactable (the player has to click them).
         local ok = a.is_interactable and a:is_interactable()
         if ok then
-            if sn:find('Bartuc',  1, true) and sn:find('BSK_Pyl', 1, true) then
-                bartuc = a
-            elseif sn:find('Council', 1, true) and sn:find('BSK_Pyl', 1, true) then
-                council = a
-            end
+            if     sn == PYLON_BARTUC  then bartuc  = a
+            elseif sn == PYLON_COUNCIL then council = a end
         end
     end
     if prefer_bartuc and bartuc then return bartuc, 'bartuc'  end
@@ -54,7 +71,8 @@ end
 task.shouldExecute = function ()
     if not settings.do_boss_portals then return false end
     if tracker.boss_killed then return false end       -- already past portal
-    return find_portal(settings.prefer_bartuc) ~= nil
+    if find_locked_door() ~= nil then return true end  -- door comes first
+    return find_portal(settings.prefer_bartuc) ~= nil  -- then pylons
 end
 
 task.Execute = function ()
@@ -62,9 +80,33 @@ task.Execute = function ()
     if not lp then return end
     local now = get_time_since_inject and get_time_since_inject() or 0
 
-    -- Pick the preferred portal, fall back to council if Bartuc didn't open
-    -- after BARTUC_GIVE_UP_S seconds (Bartuc has occasional interact-fail
-    -- where the portal stays interactable but click does nothing).
+    -- Phase 1: locked boss-room door.  If it's up (waves done, door not
+    -- yet opened), walk + click it.  Once clicked it disappears so the
+    -- next pulse falls through to Phase 2.
+    local door = find_locked_door()
+    if door then
+        if task.last_click_t and (now - task.last_click_t) < CLICK_DEBOUNCE_S then
+            task.status = 'waiting for door'
+            return
+        end
+        local pp = lp:get_position()
+        local dp = door:get_position()
+        local d  = math.sqrt((dp:x()-pp:x())^2 + (dp:y()-pp:y())^2)
+        if d <= 3 then
+            if orbwalker and orbwalker.set_clear_toggle then orbwalker.set_clear_toggle(false) end
+            interact_object(door)
+            task.last_click_t = now
+            if settings.debug_mode then console.print('[Hordes] clicking boss-room door') end
+            task.status = 'clicked door'
+            return
+        end
+        move.to_actor(door)
+        task.status = string.format('walking to door (%.0fm)', d)
+        return
+    end
+
+    -- Phase 2: Bartuc / Council pylon-choice gizmo.  Pick preferred,
+    -- fall back to Council if Bartuc didn't open after BARTUC_GIVE_UP_S.
     local prefer_bartuc = settings.prefer_bartuc and not task.bartuc_failed
     local actor, which = find_portal(prefer_bartuc)
     if not actor then

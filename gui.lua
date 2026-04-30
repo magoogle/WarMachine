@@ -154,6 +154,10 @@ gui.elements = {
     hordes_do_boss_portals         = cb(true, 'hordes_do_boss_portals'),
     hordes_prefer_bartuc           = cb(false,'hordes_prefer_bartuc'),
     hordes_do_chests               = cb(true, 'hordes_do_chests'),
+    hordes_do_chest_ga             = cb(true, 'hordes_do_chest_ga'),
+    hordes_do_chest_equipment      = cb(true, 'hordes_do_chest_equipment'),
+    hordes_do_chest_materials      = cb(false,'hordes_do_chest_materials'),
+    hordes_do_chest_gold           = cb(false,'hordes_do_chest_gold'),
     hordes_auto_mount              = cb(false,'hordes_auto_mount'),
     -- Horde arena is large; 60 covers the full radius so we engage edges, not just center.
     hordes_kill_range              = si(5,   120,   60, 'hordes_kill_range'),
@@ -480,7 +484,15 @@ gui.render = function ()
         gui.elements.hordes_prefer_bartuc:render('Prefer Bartuc',
             'When both portals are visible, click Bartuc instead of Council. Falls back to Council if Bartuc fails to interact within 6s.')
         gui.elements.hordes_do_chests:render('Open reward chests',
-            'After boss kill, walk to and open every reward chest until none remain.')
+            'Master toggle.  Off -> skip the chest phase entirely.')
+        gui.elements.hordes_do_chest_ga:render('  GA chest',
+            'Greater-Affix chest.  Highest priority -- bot tries this one first.')
+        gui.elements.hordes_do_chest_equipment:render('  Equipment chest',
+            'Random gear pieces.  Second priority.')
+        gui.elements.hordes_do_chest_materials:render('  Materials chest',
+            'Crafting materials.  Third priority.  Off by default.')
+        gui.elements.hordes_do_chest_gold:render('  Gold chest',
+            'Pile of gold.  Lowest priority.  Off by default.')
         render_menu_header('Run lifecycle')
         gui.elements.hordes_auto_reset_after:render('Auto-reset after (s)', 'Safety net')
         gui.elements.hordes_auto_mount:render('Auto mount (Z)', 'Default off -- arena is small, mount churn hurts more than it helps')

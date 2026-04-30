@@ -66,6 +66,36 @@ local function pit_post_boss_pending()
 end
 
 -- ---------------------------------------------------------------------------
+-- Hordes post-boss guard: stops dispatch from firing Next-Obj once the
+-- boss has been killed but the chest-opening phase isn't done.  The
+-- WarPlan objective ticks the moment the boss dies, so wp.activity can
+-- flip to 'turnin' (or change to a different activity in a multi-step
+-- plan) while the bot is still in S05_BSK_*.  Without this guard
+-- dispatch happily teleports us out of the arena before we touch a
+-- single chest.
+--
+-- Triggers: in a hordes zone, and the hordes activity set boss_killed
+-- but not yet run_done.  exit.lua sets run_done when the chest pass
+-- finishes (chest_opened && no chest visible) -- see exit.lua.
+-- ---------------------------------------------------------------------------
+local function in_hordes_zone()
+    local w = get_current_world()
+    local z = w and w.get_current_zone_name and w:get_current_zone_name() or nil
+    if not z then return false end
+    return z == 'S05_BSK_Prototype02' or z:match('^S05_BSK_') ~= nil
+end
+
+local function hordes_post_boss_pending()
+    if not in_hordes_zone() then return false end
+    local ok, ht = pcall(require, 'activities.hordes.tracker')
+    if not ok or not ht then return false end
+    -- Only engage once boss_killed (otherwise this would block the entire
+    -- run setup, including the initial wave start).  Release once exit.lua
+    -- flips run_done.
+    return ht.boss_killed and not ht.run_done
+end
+
+-- ---------------------------------------------------------------------------
 -- Activity -> plugin tag -> plugin-global lookup
 -- ---------------------------------------------------------------------------
 
@@ -191,6 +221,12 @@ task.shouldExecute = function ()
     -- Pit post-boss guard: don't touch sub-plugins while ArkhamAsylum is
     -- mid-upgrade.  See pit_post_boss_pending() comment.
     if pit_post_boss_pending() then return false end
+
+    -- Hordes post-boss guard: same idea -- once the boss dies the WarPlan
+    -- objective ticks (so wp.activity may flip away from 'hordes' or to
+    -- 'turnin') but we still need to finish the chest-opening phase.
+    -- Yield until the hordes activity sets run_done.
+    if hordes_post_boss_pending() then return false end
 
     -- Yield to any in-flight click/walk task
     if tracker.warplan.test.pending        then return false end

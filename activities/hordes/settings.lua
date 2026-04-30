@@ -21,7 +21,15 @@ local M = {
     -- End-of-run flow
     do_boss_portals     = true,   -- click Bartuc/Council pylon after waves clear
     prefer_bartuc       = false,  -- pick Bartuc when both portals are visible
-    do_chests           = true,   -- open reward chests after boss kill
+    do_chests           = true,   -- master toggle (off = skip chest phase entirely)
+    -- Per-chest-type toggles, processed in priority order GA -> Equipment
+    -- -> Materials -> Gold.  Aether is finite per run; the bot tries the
+    -- highest-priority enabled chest first, falls through to the next
+    -- when a click is rejected (insufficient aether).
+    do_chest_ga         = true,   -- BSK_UniqueOpChest_GreaterAffix
+    do_chest_equipment  = true,   -- BSK_UniqueOpChest_Equipment
+    do_chest_materials  = false,  -- BSK_UniqueOpChest_Materials
+    do_chest_gold       = false,  -- BSK_UniqueOpChest_Gold
 
     auto_reset_after    = 1500,
     auto_mount          = false,    -- horde arena is small; mounting churns
@@ -41,6 +49,10 @@ M.update = function ()
     M.do_boss_portals      = bget('hordes_do_boss_portals',      true)
     M.prefer_bartuc        = bget('hordes_prefer_bartuc',        false)
     M.do_chests            = bget('hordes_do_chests',            true)
+    M.do_chest_ga          = bget('hordes_do_chest_ga',          true)
+    M.do_chest_equipment   = bget('hordes_do_chest_equipment',   true)
+    M.do_chest_materials   = bget('hordes_do_chest_materials',   false)
+    M.do_chest_gold        = bget('hordes_do_chest_gold',        false)
     M.auto_reset_after    = bget('hordes_auto_reset_after',    1500)
     M.auto_mount          = bget('hordes_auto_mount',          false)
     M.debug_mode          = bget('debug_mode',                 false)

@@ -40,6 +40,40 @@ end
 local last_pulse_t = 0
 local PULSE_INTERVAL_S = 0.05
 
+-- Watchdog: when we've been idle for IDLE_LOG_S, log it once with a
+-- diagnostic dump so the operator knows WHY no task fired.  Reset on
+-- every non-idle pulse.  The user reported "teleported in and just
+-- stood there" -- this surfaces the cause (no enemies in stream, no
+-- pylons, no portal, etc.) the next time it happens.
+local idle_since_t   = nil
+local last_idle_log_t = 0
+local IDLE_LOG_S     = 8
+
+local function log_idle_diag(now)
+    -- Throttle the diag log to once every IDLE_LOG_S so a long idle
+    -- doesn't spam the console.
+    if (now - last_idle_log_t) < IDLE_LOG_S then return end
+    last_idle_log_t = now
+    -- Cheap snapshot of why each task said no.  We re-call shouldExecute
+    -- and prefix with the task's name for visibility.
+    local lines = { '[Hordes] runner idle diagnostic:' }
+    for _, t in ipairs(tasks) do
+        local ok, want = pcall(t.shouldExecute or function () return false end)
+        local name = t.name or '?'
+        local status = t.status or '-'
+        lines[#lines + 1] = string.format('  - %-22s shouldExecute=%s status=%s',
+            name, tostring(ok and want), tostring(status))
+    end
+    -- Add basic world state for context.
+    local w = get_current_world()
+    local zone = w and w.get_current_zone_name and w:get_current_zone_name() or '?'
+    local lp = get_local_player()
+    local pp = lp and lp:get_position() or nil
+    lines[#lines + 1] = string.format('  zone=%s pos=%s', zone,
+        pp and string.format('(%.1f,%.1f)', pp:x(), pp:y()) or 'nil')
+    for _, l in ipairs(lines) do console.print(l) end
+end
+
 R.pulse = function ()
     local now = get_time_since_inject and get_time_since_inject() or 0
     if (now - last_pulse_t) < PULSE_INTERVAL_S then return end
@@ -48,8 +82,18 @@ R.pulse = function ()
         if task.shouldExecute and task.shouldExecute() then
             tracker.current_task = task
             if task.Execute then task:Execute() end
+            idle_since_t = nil    -- reset watchdog on any non-idle pulse
             return
         end
+    end
+    -- All tasks declined this pulse.  Mark idle, and once we've been
+    -- idle long enough, dump a diagnostic.  Helps catch "teleported in
+    -- and just stood there" failure modes where the user has no
+    -- visibility into which task chain broke.
+    if not idle_since_t then idle_since_t = now end
+    if (now - idle_since_t) > IDLE_LOG_S then
+        local s_ok, s = pcall(require, 'activities.hordes.settings')
+        if s_ok and s and s.debug_mode then log_idle_diag(now) end
     end
     tracker.current_task = { name = 'idle', status = 'idle' }
 end

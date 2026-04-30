@@ -105,6 +105,20 @@ local function fire_start_cycle()
     end
 end
 
+-- Hordes post-boss guard.  After the boss dies the WarPlan objective
+-- ticks (so wp.activity might flip to 'turnin' or another activity)
+-- but we still need to finish the chest-opening phase.  Yield to the
+-- in-zone activity until exit.lua sets run_done.  Same shape as the
+-- pit_post_boss_pending() guard in supervisor.lua.
+local function hordes_post_boss_pending()
+    local zone = get_current_world() and get_current_world():get_current_zone_name() or nil
+    if not zone then return false end
+    if zone ~= 'S05_BSK_Prototype02' and not zone:match('^S05_BSK_') then return false end
+    local ok, ht = pcall(require, 'activities.hordes.tracker')
+    if not ok or not ht then return false end
+    return ht.boss_killed and not ht.run_done
+end
+
 task.shouldExecute = function ()
     if settings.mode ~= mode.WARPLAN then return false end
     -- Don't dispatch if any sub-task is already mid-flight
@@ -112,6 +126,9 @@ task.shouldExecute = function ()
     if tracker.warplan.next_obj.pending then return false end
     if tracker.warplan.turn_in.pending then return false end
     if tracker.warplan.start_cycle.pending then return false end
+    -- Yield to hordes chest-opening even when the WarPlan quest already
+    -- considers itself complete.
+    if hordes_post_boss_pending() then return false end
     return true
 end
 
