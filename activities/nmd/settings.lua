@@ -14,7 +14,9 @@ local M = {
     auto_reset_after  = 900,     -- s; NMDs can run longer than pits
     exit_after_boss   = true,
 
-    auto_mount        = true,
+    -- auto_mount removed: dungeon corridors + combat density make
+    -- mount churn a net loss.  Helltide is the only activity exposing
+    -- the mount option.
 
     debug_mode        = false,
 }
@@ -31,7 +33,6 @@ M.update = function ()
     M.do_objectives    = bget('nmd_do_objectives',    true)
     M.auto_reset_after = bget('nmd_auto_reset_after', 900)
     M.exit_after_boss  = bget('nmd_exit_after_boss',  true)
-    M.auto_mount       = bget('nmd_auto_mount',       true)
     M.debug_mode       = bget('debug_mode',           false)
 end
 

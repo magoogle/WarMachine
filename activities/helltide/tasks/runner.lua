@@ -11,7 +11,8 @@
 -- enemy) is in poi_priority.lua + per-task logic, not in priority chains.
 -- ---------------------------------------------------------------------------
 
-local tracker = require 'activities.helltide.tracker'
+local tracker        = require 'activities.helltide.tracker'
+local make_freeroam  = require 'core.freeroam'
 
 local R = {}
 
@@ -40,6 +41,12 @@ for _, name in ipairs(TASK_FILES) do
         console.print('[Helltide] task load failed: ' .. name .. ' err=' .. tostring(t))
     end
 end
+
+-- Batmobile freeroam fallback: keeps the bot wandering when no POI is
+-- actionable (sparse data zone, between cinder thresholds, etc.).  Goes
+-- between kill_monster and idle so combat still preempts wandering.
+local idle_idx = #tasks
+table.insert(tasks, idle_idx, make_freeroam('warmachine_helltide'))
 
 -- Throttle so we don't spam clicks every frame
 local last_pulse_t = 0

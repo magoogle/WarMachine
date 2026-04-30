@@ -25,13 +25,9 @@ end
 
 M.pulse = function ()
     settings_mod.update()
-    -- Hordes: mounting is usually counterproductive (small arena, constant
-    -- combat) but expose the toggle anyway.  When auto_mount is off,
-    -- mount_manager is a no-op via opts.disabled.
-    mount_manager.update({
-        disabled    = not settings_mod.auto_mount,
-        allow_mount = false,
-    })
+    -- Mounting disabled: small arena, constant combat -- mount churn is
+    -- always a net loss here.  Only Helltide uses auto-mount.
+    mount_manager.update({ disabled = true, allow_mount = false })
     runner.pulse()
 end
 

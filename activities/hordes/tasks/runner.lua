@@ -1,6 +1,7 @@
 -- activities/hordes/tasks/runner.lua
 
-local tracker = require 'activities.hordes.tracker'
+local tracker        = require 'activities.hordes.tracker'
+local make_freeroam  = require 'core.freeroam'
 
 local R = {}
 
@@ -27,6 +28,7 @@ local TASK_FILES = {
     'interact_aether',
     'kill_monster',
     'walk_boss_room',
+    -- 'freeroam_fallback' inserted programmatically below (it's a factory)
     'idle',
 }
 
@@ -36,6 +38,13 @@ for _, name in ipairs(TASK_FILES) do
     if ok and t then tasks[#tasks + 1] = t
     else console.print('[Hordes] task load failed: ' .. name .. ' err=' .. tostring(t)) end
 end
+
+-- Insert the Batmobile freeroam fallback just before idle.  This keeps the
+-- bot moving when nothing else has a target -- e.g. between waves with no
+-- enemies in stream, or after teleport-in before the first wave starts,
+-- or in zones with no POI catalogue yet.
+local idle_idx = #tasks    -- idle is the last entry
+table.insert(tasks, idle_idx, make_freeroam('warmachine_hordes'))
 
 local last_pulse_t = 0
 local PULSE_INTERVAL_S = 0.05

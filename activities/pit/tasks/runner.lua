@@ -2,7 +2,8 @@
 -- activities/pit/tasks/runner.lua  --  task list dispatcher.
 -- ---------------------------------------------------------------------------
 
-local tracker = require 'activities.pit.tracker'
+local tracker        = require 'activities.pit.tracker'
+local make_freeroam  = require 'core.freeroam'
 
 local R = {}
 
@@ -34,6 +35,11 @@ for _, name in ipairs(TASK_FILES) do
         console.print('[Pit] task load failed: ' .. name .. ' err=' .. tostring(t))
     end
 end
+
+-- Batmobile freeroam fallback: keeps the bot moving in pit floors until
+-- POIs come into stream + StaticPather data drives priority routing.
+local idle_idx = #tasks
+table.insert(tasks, idle_idx, make_freeroam('warmachine_pit'))
 
 local last_pulse_t = 0
 local PULSE_INTERVAL_S = 0.05

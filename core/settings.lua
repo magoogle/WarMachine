@@ -67,23 +67,31 @@ settings.update_settings = function ()
     settings.warplan.auto_cycle         = gui.elements.warplan_auto_cycle:get()
     settings.warplan.show_click_points  = gui.elements.warplan_show_points:get()
 
+    -- Row Y values are shared across the 3 slots in each row -- the
+    -- vendor-menu cards in a row sit at the same screen height in-game,
+    -- so independent Y per slot was busywork.  See gui.lua warplan_cp_row*_y.
+    local row1_y = gui.elements.warplan_cp_row1_y:get()
+    local row2_y = gui.elements.warplan_cp_row2_y:get()
+    local row3_y = gui.elements.warplan_cp_row3_y:get()
+    local row4_y = gui.elements.warplan_cp_row4_y:get()
+    local row5_y = gui.elements.warplan_cp_row5_y:get()
     settings.warplan.click_points = {
         slots = {
-            { x = gui.elements.warplan_cp_s1_x:get(),  y = gui.elements.warplan_cp_s1_y:get(),  label = '1' },
-            { x = gui.elements.warplan_cp_s2_x:get(),  y = gui.elements.warplan_cp_s2_y:get(),  label = '2' },
-            { x = gui.elements.warplan_cp_s3_x:get(),  y = gui.elements.warplan_cp_s3_y:get(),  label = '3' },
-            { x = gui.elements.warplan_cp_s4_x:get(),  y = gui.elements.warplan_cp_s4_y:get(),  label = '4' },
-            { x = gui.elements.warplan_cp_s5_x:get(),  y = gui.elements.warplan_cp_s5_y:get(),  label = '5' },
-            { x = gui.elements.warplan_cp_s6_x:get(),  y = gui.elements.warplan_cp_s6_y:get(),  label = '6' },
-            { x = gui.elements.warplan_cp_s7_x:get(),  y = gui.elements.warplan_cp_s7_y:get(),  label = '7' },
-            { x = gui.elements.warplan_cp_s8_x:get(),  y = gui.elements.warplan_cp_s8_y:get(),  label = '8' },
-            { x = gui.elements.warplan_cp_s9_x:get(),  y = gui.elements.warplan_cp_s9_y:get(),  label = '9' },
-            { x = gui.elements.warplan_cp_s10_x:get(), y = gui.elements.warplan_cp_s10_y:get(), label = '10' },
-            { x = gui.elements.warplan_cp_s11_x:get(), y = gui.elements.warplan_cp_s11_y:get(), label = '11' },
-            { x = gui.elements.warplan_cp_s12_x:get(), y = gui.elements.warplan_cp_s12_y:get(), label = '12' },
-            { x = gui.elements.warplan_cp_s13_x:get(), y = gui.elements.warplan_cp_s13_y:get(), label = '13' },
-            { x = gui.elements.warplan_cp_s14_x:get(), y = gui.elements.warplan_cp_s14_y:get(), label = '14' },
-            { x = gui.elements.warplan_cp_s15_x:get(), y = gui.elements.warplan_cp_s15_y:get(), label = '15' },
+            { x = gui.elements.warplan_cp_s1_x:get(),  y = row1_y, label = '1' },
+            { x = gui.elements.warplan_cp_s2_x:get(),  y = row1_y, label = '2' },
+            { x = gui.elements.warplan_cp_s3_x:get(),  y = row1_y, label = '3' },
+            { x = gui.elements.warplan_cp_s4_x:get(),  y = row2_y, label = '4' },
+            { x = gui.elements.warplan_cp_s5_x:get(),  y = row2_y, label = '5' },
+            { x = gui.elements.warplan_cp_s6_x:get(),  y = row2_y, label = '6' },
+            { x = gui.elements.warplan_cp_s7_x:get(),  y = row3_y, label = '7' },
+            { x = gui.elements.warplan_cp_s8_x:get(),  y = row3_y, label = '8' },
+            { x = gui.elements.warplan_cp_s9_x:get(),  y = row3_y, label = '9' },
+            { x = gui.elements.warplan_cp_s10_x:get(), y = row4_y, label = '10' },
+            { x = gui.elements.warplan_cp_s11_x:get(), y = row4_y, label = '11' },
+            { x = gui.elements.warplan_cp_s12_x:get(), y = row4_y, label = '12' },
+            { x = gui.elements.warplan_cp_s13_x:get(), y = row5_y, label = '13' },
+            { x = gui.elements.warplan_cp_s14_x:get(), y = row5_y, label = '14' },
+            { x = gui.elements.warplan_cp_s15_x:get(), y = row5_y, label = '15' },
         },
         start          = { x = gui.elements.warplan_cp_start_x:get(),   y = gui.elements.warplan_cp_start_y:get(),   label = 'START'    },
         confirm        = { x = gui.elements.warplan_cp_confirm_x:get(), y = gui.elements.warplan_cp_confirm_y:get(), label = 'Confirm'  },

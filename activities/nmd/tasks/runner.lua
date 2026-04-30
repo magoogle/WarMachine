@@ -1,6 +1,7 @@
 -- activities/nmd/tasks/runner.lua
 
-local tracker = require 'activities.nmd.tracker'
+local tracker        = require 'activities.nmd.tracker'
+local make_freeroam  = require 'core.freeroam'
 
 local R = {}
 
@@ -17,6 +18,12 @@ for _, name in ipairs(TASK_FILES) do
     if ok and t then tasks[#tasks + 1] = t
     else console.print('[NMD] task load failed: ' .. name .. ' err=' .. tostring(t)) end
 end
+
+-- Batmobile freeroam fallback so nightmare dungeons keep moving when no
+-- POI is catalogued -- the most common case for first-time-seen NMD
+-- variants.
+local idle_idx = #tasks
+table.insert(tasks, idle_idx, make_freeroam('warmachine_nmd'))
 
 local last_pulse_t = 0
 local PULSE_INTERVAL_S = 0.05

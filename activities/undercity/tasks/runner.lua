@@ -1,6 +1,7 @@
 -- activities/undercity/tasks/runner.lua  --  task list dispatcher.
 
-local tracker = require 'activities.undercity.tracker'
+local tracker        = require 'activities.undercity.tracker'
+local make_freeroam  = require 'core.freeroam'
 
 local R = {}
 
@@ -20,6 +21,14 @@ for _, name in ipairs(TASK_FILES) do
     if ok and t then tasks[#tasks + 1] = t
     else console.print('[Undercity] task load failed: ' .. name .. ' err=' .. tostring(t)) end
 end
+
+-- Batmobile freeroam fallback: keeps the bot exploring when no enticement /
+-- chest / portal switch is in actor stream (sparse data zones, between
+-- engagements).  Priority-wise: enter-undercity standalone fires first
+-- when in town, then the in-zone tasks, then this catches everything
+-- else before idle.
+local idle_idx = #tasks
+table.insert(tasks, idle_idx, make_freeroam('warmachine_undercity'))
 
 local last_pulse_t = 0
 local PULSE_INTERVAL_S = 0.05

@@ -18,8 +18,8 @@ local M = {
     auto_reset_after  = 600,
     exit_after_chest  = true,
 
-    -- Mount
-    auto_mount        = true,
+    -- auto_mount removed: undercity floors are tight + combat-dense.
+    -- Helltide is the only activity exposing the mount option.
 
     debug_mode        = false,
 }
@@ -37,7 +37,6 @@ M.update = function ()
     M.enticement_timeout = bget('uc_enticement_timeout', 4)
     M.auto_reset_after  = bget('uc_auto_reset_after',  600)
     M.exit_after_chest  = bget('uc_exit_after_chest',  true)
-    M.auto_mount        = bget('uc_auto_mount',        true)
     M.debug_mode        = bget('debug_mode',           false)
 end
 

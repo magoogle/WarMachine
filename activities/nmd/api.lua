@@ -29,12 +29,9 @@ end
 
 M.pulse = function ()
     settings_mod.update()
-    local current = tracker.current_task or {}
-    local travel_state = (current.name == 'interact_poi')
-    mount_manager.update({
-        disabled    = not settings_mod.auto_mount,
-        allow_mount = travel_state,
-    })
+    -- Mounting disabled in nightmare dungeons: tight corridors + combat
+    -- density makes mount churn a net loss.  Only Helltide uses auto-mount.
+    mount_manager.update({ disabled = true, allow_mount = false })
     runner.pulse()
 end
 

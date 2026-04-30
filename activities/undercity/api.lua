@@ -32,15 +32,9 @@ end
 
 M.pulse = function ()
     settings_mod.update()
-    local current = tracker.current_task or {}
-    local travel_state = (current.name == 'interact_poi'
-                       or current.name == 'floor_portal'
-                       or current.name == 'goto_chest'
-                       or current.name == 'enter_undercity')
-    mount_manager.update({
-        disabled    = not settings_mod.auto_mount,
-        allow_mount = travel_state,
-    })
+    -- Mounting disabled: undercity floors are tight + combat-dense, mount
+    -- churn hurts.  Only Helltide uses auto-mount.
+    mount_manager.update({ disabled = true, allow_mount = false })
     runner.pulse()
 end
 

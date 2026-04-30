@@ -41,16 +41,12 @@ end
 M.pulse = function ()
     settings_mod.update()
 
-    -- Mount management: allow only during exploration / travel-flavored
-    -- tasks.  Combat / interaction states should keep the bot grounded.
-    local current = tracker.current_task or {}
-    local travel_state = (current.name == 'interact_poi'
-                       or current.name == 'floor_portal'
-                       or current.name == 'enter_pit')
-    mount_manager.update({
-        disabled    = not settings_mod.auto_mount,
-        allow_mount = travel_state,
-    })
+    -- Mounting is intentionally disabled in Pit: floors are short, mount
+    -- churn (pre-engage dismount + post-engage remount) hurts more than
+    -- it helps.  Helltide is the only activity where mounting between
+    -- POIs is a net win.  Keep mount_manager engaged but always-disabled
+    -- so any prior mount state from another activity gets cleared.
+    mount_manager.update({ disabled = true, allow_mount = false })
 
     runner.pulse()
 end

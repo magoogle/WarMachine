@@ -114,12 +114,17 @@ gui.elements = {
     pit_kill_monsters              = cb(true,  'pit_kill_monsters'),
     pit_do_chests                  = cb(true,  'pit_do_chests'),
     pit_do_shrines                 = cb(true,  'pit_do_shrines'),
-    pit_interact_glyph             = cb(true,  'pit_interact_glyph'),
     pit_exit_after_chest           = cb(true,  'pit_exit_after_chest'),
-    pit_auto_mount                 = cb(true,  'pit_auto_mount'),
     pit_kill_range                 = si(5,  60,    25, 'pit_kill_range'),
     pit_boss_intro_delay           = si(0,  30,     3, 'pit_boss_intro_delay'),
     pit_auto_reset_after           = si(120,1800, 600, 'pit_auto_reset_after'),
+    -- Glyph upgrade (post-boss gizmo).  Settings parity with ArkhamAsylum.
+    pit_glyph_upgrade              = cb(true,  'pit_glyph_upgrade'),
+    pit_glyph_upgrade_mode         = co(1,         'pit_glyph_upgrade_mode'),
+    pit_glyph_upgrade_threshold    = si(1, 100,   1, 'pit_glyph_upgrade_threshold'),
+    pit_glyph_upgrade_legendary    = cb(true,  'pit_glyph_upgrade_legendary'),
+    pit_glyph_min_level            = si(1, 100,   1, 'pit_glyph_min_level'),
+    pit_glyph_max_level            = si(1, 100, 100, 'pit_glyph_max_level'),
 
     -- ---- Undercity activity settings ----
     uc_tree                        = tree_node:new(1),
@@ -127,7 +132,6 @@ gui.elements = {
     uc_do_chests                   = cb(true, 'uc_do_chests'),
     uc_do_enticements              = cb(true, 'uc_do_enticements'),
     uc_exit_after_chest            = cb(true, 'uc_exit_after_chest'),
-    uc_auto_mount                  = cb(true, 'uc_auto_mount'),
     uc_kill_range                  = si(5,   60,   25, 'uc_kill_range'),
     uc_boss_intro_delay            = si(0,   30,    3, 'uc_boss_intro_delay'),
     uc_max_hearths                 = si(0,    8,    4, 'uc_max_hearths'),
@@ -141,7 +145,6 @@ gui.elements = {
     nmd_do_shrines                 = cb(true, 'nmd_do_shrines'),
     nmd_do_objectives              = cb(true, 'nmd_do_objectives'),
     nmd_exit_after_boss            = cb(true, 'nmd_exit_after_boss'),
-    nmd_auto_mount                 = cb(true, 'nmd_auto_mount'),
     nmd_kill_range                 = si(5,   60,   25, 'nmd_kill_range'),
     nmd_boss_intro_delay           = si(0,   30,    3, 'nmd_boss_intro_delay'),
     nmd_auto_reset_after           = si(120,1800,  900,'nmd_auto_reset_after'),
@@ -158,7 +161,6 @@ gui.elements = {
     hordes_do_chest_equipment      = cb(true, 'hordes_do_chest_equipment'),
     hordes_do_chest_materials      = cb(false,'hordes_do_chest_materials'),
     hordes_do_chest_gold           = cb(false,'hordes_do_chest_gold'),
-    hordes_auto_mount              = cb(false,'hordes_auto_mount'),
     -- Horde arena is large; 60 covers the full radius so we engage edges, not just center.
     hordes_kill_range              = si(5,   120,   60, 'hordes_kill_range'),
     hordes_pylon_pick_timeout      = si(2,   30,    8, 'hordes_pylon_pick_timeout'),
@@ -183,42 +185,33 @@ gui.elements = {
     warplan_cp_tree     = tree_node:new(1),
     warplan_show_points = cb(false, 'warplan_show_points'),
 
-    -- 5 rows x 3 cols = 15 slot click-points covering the WAR PLANS menu
-    -- Row 1 (red)
+    -- 5 rows x 3 cols = 15 slot click-points covering the WAR PLANS menu.
+    -- The three slots in each row sit at the same Y in-game (row of cards
+    -- in the menu), so we only expose ONE Y slider per row -- 15 X +
+    -- 5 row-Y = 20 sliders instead of 30.  Cuts setup time roughly in
+    -- half.  Row Y defaults match the original per-slot defaults.
+    warplan_cp_row1_y = si(0, 2160, 360, 'warplan_cp_row1_y'),
+    warplan_cp_row2_y = si(0, 2160, 510, 'warplan_cp_row2_y'),
+    warplan_cp_row3_y = si(0, 2160, 660, 'warplan_cp_row3_y'),
+    warplan_cp_row4_y = si(0, 2160, 810, 'warplan_cp_row4_y'),
+    warplan_cp_row5_y = si(0, 2160, 960, 'warplan_cp_row5_y'),
+
+    -- Per-slot X (unchanged -- columns can drift independently)
     warplan_cp_s1_x  = si(0, 3840, 320, 'warplan_cp_s1_x'),
-    warplan_cp_s1_y  = si(0, 2160, 360, 'warplan_cp_s1_y'),
     warplan_cp_s2_x  = si(0, 3840, 470, 'warplan_cp_s2_x'),
-    warplan_cp_s2_y  = si(0, 2160, 360, 'warplan_cp_s2_y'),
     warplan_cp_s3_x  = si(0, 3840, 620, 'warplan_cp_s3_x'),
-    warplan_cp_s3_y  = si(0, 2160, 360, 'warplan_cp_s3_y'),
-    -- Row 2 (green)
     warplan_cp_s4_x  = si(0, 3840, 320, 'warplan_cp_s4_x'),
-    warplan_cp_s4_y  = si(0, 2160, 510, 'warplan_cp_s4_y'),
     warplan_cp_s5_x  = si(0, 3840, 470, 'warplan_cp_s5_x'),
-    warplan_cp_s5_y  = si(0, 2160, 510, 'warplan_cp_s5_y'),
     warplan_cp_s6_x  = si(0, 3840, 620, 'warplan_cp_s6_x'),
-    warplan_cp_s6_y  = si(0, 2160, 510, 'warplan_cp_s6_y'),
-    -- Row 3 (yellow)
     warplan_cp_s7_x  = si(0, 3840, 320, 'warplan_cp_s7_x'),
-    warplan_cp_s7_y  = si(0, 2160, 660, 'warplan_cp_s7_y'),
     warplan_cp_s8_x  = si(0, 3840, 470, 'warplan_cp_s8_x'),
-    warplan_cp_s8_y  = si(0, 2160, 660, 'warplan_cp_s8_y'),
     warplan_cp_s9_x  = si(0, 3840, 620, 'warplan_cp_s9_x'),
-    warplan_cp_s9_y  = si(0, 2160, 660, 'warplan_cp_s9_y'),
-    -- Row 4 (cyan)
     warplan_cp_s10_x = si(0, 3840, 320, 'warplan_cp_s10_x'),
-    warplan_cp_s10_y = si(0, 2160, 810, 'warplan_cp_s10_y'),
     warplan_cp_s11_x = si(0, 3840, 470, 'warplan_cp_s11_x'),
-    warplan_cp_s11_y = si(0, 2160, 810, 'warplan_cp_s11_y'),
     warplan_cp_s12_x = si(0, 3840, 620, 'warplan_cp_s12_x'),
-    warplan_cp_s12_y = si(0, 2160, 810, 'warplan_cp_s12_y'),
-    -- Row 5 (orange)
     warplan_cp_s13_x = si(0, 3840, 320, 'warplan_cp_s13_x'),
-    warplan_cp_s13_y = si(0, 2160, 960, 'warplan_cp_s13_y'),
     warplan_cp_s14_x = si(0, 3840, 470, 'warplan_cp_s14_x'),
-    warplan_cp_s14_y = si(0, 2160, 960, 'warplan_cp_s14_y'),
     warplan_cp_s15_x = si(0, 3840, 620, 'warplan_cp_s15_x'),
-    warplan_cp_s15_y = si(0, 2160, 960, 'warplan_cp_s15_y'),
 
     -- Top-row UI buttons
     warplan_cp_start_x   = si(0, 3840, 1500, 'warplan_cp_start_x'),
@@ -355,35 +348,28 @@ gui.render = function ()
         render_menu_header('Open the War Plans vendor window. Toggle "Show points" to see crosshairs, then drag sliders to align them with each activity slot, START, Confirm popup, and the map Next-Obj button.')
         gui.elements.warplan_show_points:render('Show points', 'Render crosshairs at each click point')
 
-        render_menu_header('5x3 grid covering the WAR PLANS menu. Iteration clicks each cell once -- redundant hits on the same slot toggle it, but full grid coverage guarantees we hit every visible slot.')
-        local function row(prefix, color_label, e1x, e1y, e2x, e2y, e3x, e3y)
-            e1x:render(prefix .. ' L X', 'Screen X for ' .. prefix .. ' left ('  .. color_label .. ')')
-            e1y:render(prefix .. ' L Y', 'Screen Y for ' .. prefix .. ' left')
+        render_menu_header('5x3 grid covering the WAR PLANS menu. Three slots in each row share a single Y slider -- in-game the cards in a row sit at the same screen height, so independent Y per slot was just busywork. Drag each row Y once, then nudge each L/M/R X.')
+        local function row(prefix, color_label, ey, e1x, e2x, e3x)
+            ey :render(prefix .. ' Y',   'Screen Y for the entire ' .. prefix .. ' (' .. color_label .. ')')
+            e1x:render(prefix .. ' L X', 'Screen X for ' .. prefix .. ' left')
             e2x:render(prefix .. ' M X', 'Screen X for ' .. prefix .. ' middle')
-            e2y:render(prefix .. ' M Y', 'Screen Y for ' .. prefix .. ' middle')
             e3x:render(prefix .. ' R X', 'Screen X for ' .. prefix .. ' right')
-            e3y:render(prefix .. ' R Y', 'Screen Y for ' .. prefix .. ' right')
         end
         row('Row 1', 'red',
-            gui.elements.warplan_cp_s1_x,  gui.elements.warplan_cp_s1_y,
-            gui.elements.warplan_cp_s2_x,  gui.elements.warplan_cp_s2_y,
-            gui.elements.warplan_cp_s3_x,  gui.elements.warplan_cp_s3_y)
+            gui.elements.warplan_cp_row1_y,
+            gui.elements.warplan_cp_s1_x, gui.elements.warplan_cp_s2_x, gui.elements.warplan_cp_s3_x)
         row('Row 2', 'green',
-            gui.elements.warplan_cp_s4_x,  gui.elements.warplan_cp_s4_y,
-            gui.elements.warplan_cp_s5_x,  gui.elements.warplan_cp_s5_y,
-            gui.elements.warplan_cp_s6_x,  gui.elements.warplan_cp_s6_y)
+            gui.elements.warplan_cp_row2_y,
+            gui.elements.warplan_cp_s4_x, gui.elements.warplan_cp_s5_x, gui.elements.warplan_cp_s6_x)
         row('Row 3', 'yellow',
-            gui.elements.warplan_cp_s7_x,  gui.elements.warplan_cp_s7_y,
-            gui.elements.warplan_cp_s8_x,  gui.elements.warplan_cp_s8_y,
-            gui.elements.warplan_cp_s9_x,  gui.elements.warplan_cp_s9_y)
+            gui.elements.warplan_cp_row3_y,
+            gui.elements.warplan_cp_s7_x, gui.elements.warplan_cp_s8_x, gui.elements.warplan_cp_s9_x)
         row('Row 4', 'cyan',
-            gui.elements.warplan_cp_s10_x, gui.elements.warplan_cp_s10_y,
-            gui.elements.warplan_cp_s11_x, gui.elements.warplan_cp_s11_y,
-            gui.elements.warplan_cp_s12_x, gui.elements.warplan_cp_s12_y)
+            gui.elements.warplan_cp_row4_y,
+            gui.elements.warplan_cp_s10_x, gui.elements.warplan_cp_s11_x, gui.elements.warplan_cp_s12_x)
         row('Row 5', 'orange',
-            gui.elements.warplan_cp_s13_x, gui.elements.warplan_cp_s13_y,
-            gui.elements.warplan_cp_s14_x, gui.elements.warplan_cp_s14_y,
-            gui.elements.warplan_cp_s15_x, gui.elements.warplan_cp_s15_y)
+            gui.elements.warplan_cp_row5_y,
+            gui.elements.warplan_cp_s13_x, gui.elements.warplan_cp_s14_x, gui.elements.warplan_cp_s15_x)
         gui.elements.warplan_cp_start_x:render('START X', 'Screen X for the START button')
         gui.elements.warplan_cp_start_y:render('START Y', 'Screen Y for the START button')
 
@@ -422,13 +408,27 @@ gui.render = function ()
         render_menu_header('In-pit objectives')
         gui.elements.pit_do_chests:render('Loot chests', 'Side-corridor chests + end-of-run reward')
         gui.elements.pit_do_shrines:render('Use shrines', 'Buff shrines on the way')
-        gui.elements.pit_interact_glyph:render('Upgrade glyphs post-boss',
-            'Interact with the Paragon Glyph Upgrade gizmo and run the upgrade UI')
+
+        render_menu_header('Glyph upgrade (post-boss)')
+        gui.elements.pit_glyph_upgrade:render('Enable glyph upgrade',
+            'Interact with the Paragon Glyph Upgrade gizmo at the end of the final floor and iterate the upgrade UI.')
+        if gui.elements.pit_glyph_upgrade:get() then
+            gui.elements.pit_glyph_upgrade_mode:render('Upgrade mode',
+                { 'Highest to lowest', 'Lowest to highest' },
+                'Order to iterate glyphs.  Highest-to-lowest matches ArkhamAsylum default.')
+            gui.elements.pit_glyph_upgrade_threshold:render('Min upgrade chance %',
+                'Only attempt an upgrade if its success chance is >= this percent.')
+            gui.elements.pit_glyph_min_level:render('Minimum glyph level',
+                'Skip glyphs below this level.')
+            gui.elements.pit_glyph_max_level:render('Maximum glyph level',
+                'Skip glyphs above this level.')
+            gui.elements.pit_glyph_upgrade_legendary:render('Upgrade to legendary',
+                'Allow level-45 -> legendary upgrades.  Disable to save gem fragments.')
+        end
 
         render_menu_header('Run lifecycle')
         gui.elements.pit_exit_after_chest:render('Exit after chest', 'Warp out as soon as the attunement chest is looted')
         gui.elements.pit_auto_reset_after:render('Auto-reset after (s)', 'Safety net: reset_all_dungeons if the run drags this long')
-        gui.elements.pit_auto_mount:render('Auto mount (Z)', 'Mount up between fights when no enemy is near')
 
         gui.elements.pit_tree:pop()
     end
@@ -446,7 +446,6 @@ gui.render = function ()
         render_menu_header('Run lifecycle')
         gui.elements.uc_exit_after_chest:render('Exit after chest', 'Warp out / reset after the attunement chest is looted')
         gui.elements.uc_auto_reset_after:render('Auto-reset after (s)', 'Safety net')
-        gui.elements.uc_auto_mount:render('Auto mount (Z)', 'Mount up between objectives when clear')
         gui.elements.uc_tree:pop()
     end
 
@@ -462,7 +461,6 @@ gui.render = function ()
         render_menu_header('Run lifecycle')
         gui.elements.nmd_exit_after_boss:render('Exit after boss', 'reset_all_dungeons after the boss kill')
         gui.elements.nmd_auto_reset_after:render('Auto-reset after (s)', 'Safety net')
-        gui.elements.nmd_auto_mount:render('Auto mount (Z)', 'Mount between fights when clear')
         gui.elements.nmd_tree:pop()
     end
 
@@ -495,7 +493,6 @@ gui.render = function ()
             'Pile of gold.  Lowest priority.  Off by default.')
         render_menu_header('Run lifecycle')
         gui.elements.hordes_auto_reset_after:render('Auto-reset after (s)', 'Safety net')
-        gui.elements.hordes_auto_mount:render('Auto mount (Z)', 'Default off -- arena is small, mount churn hurts more than it helps')
         gui.elements.hordes_tree:pop()
     end
 

@@ -3,7 +3,14 @@
 local move    = require 'core.move'
 local tracker = require 'activities.undercity.tracker'
 
-local task = { name = 'enter_undercity', status = 'idle', interacted = false }
+local task = {
+    name                 = 'enter_undercity',
+    status               = 'idle',
+    interacted           = false,
+    last_portal_click_t  = nil,    -- set immediately after interact_object(portal)
+}
+local PORTAL_LOAD_GRACE_S = 8     -- after clicking portal, ignore brazier branch
+                                   -- this long while the zone-load completes
 
 local TOWN_ZONES = { ['Skov_Temis'] = true, ['Naha_Kurast'] = true }
 
@@ -42,6 +49,21 @@ task.Execute = function ()
     if not lp then return end
     local pp = lp:get_position()
     if not pp then return end
+    local now = get_time_since_inject and get_time_since_inject() or 0
+
+    -- Portal-load grace: after we click the portal, the actor de-spawns
+    -- from the stream BEFORE the zone change registers in
+    -- world:get_current_zone_name() -- and the brazier is still in stream
+    -- the whole time.  Without this guard the next pulse falls through
+    -- to the brazier branch and the bot walks BACK to the obelisk while
+    -- the Undercity zone is loading.  User-reported: 'started portal then
+    -- walked away'.  Hold position for PORTAL_LOAD_GRACE_S after the
+    -- click; that's enough for the zone-load to flip in_undercity().
+    if task.last_portal_click_t
+       and (now - task.last_portal_click_t) < PORTAL_LOAD_GRACE_S then
+        task.status = 'waiting for zone load'
+        return
+    end
 
     -- 1. Already-spawned portal? Walk in, fresh-run trigger.
     local portal = find_actor('Portal_Dungeon_Undercity', true)
@@ -50,6 +72,7 @@ task.Execute = function ()
         local d = math.sqrt((p:x()-pp:x())^2 + (p:y()-pp:y())^2)
         if d <= 2 then
             interact_object(portal)
+            task.last_portal_click_t = now
             tracker.reset_run()
             task.interacted = false
             task.status = 'entering portal'

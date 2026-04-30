@@ -28,9 +28,9 @@ local task = {
     glyph_trigger_t       = nil,
 }
 
--- Tunables (could be made user-settings later)
-local UPGRADE_THRESHOLD     = 5    -- min upgrade chance % to attempt (matches Arkham default)
-local UPGRADE_LEGENDARY     = false -- attempt level-45 glyphs (legendary)
+-- Non-user-facing tunables.  The user-facing knobs live in
+-- activities/pit/settings.lua (glyph_upgrade*, glyph_min/max_level)
+-- and get read inline below so the user can adjust mid-run.
 local INTERACT_COOLDOWN     = 2.0
 local MAX_FAILED_BEFORE_BL  = 5
 
@@ -58,11 +58,15 @@ local function should_upgrade(g, last)
         task.failed_count = 0
     end
     if task.blacklist[g.glyph_name_hash] then return false end
-    -- can_upgrade() is bugged for level 45; only honor it for non-max
     local lvl = g:get_level()
+    -- User-facing min/max level filter (Arkham parity)
+    if lvl < (settings.glyph_min_level or 1)   then return false end
+    if lvl > (settings.glyph_max_level or 100) then return false end
+    -- User-facing chance threshold
     local chance_pct = math.floor((g:get_upgrade_chance() + 0.005) * 100)
-    if chance_pct < UPGRADE_THRESHOLD then return false end
-    if lvl == 45 then return UPGRADE_LEGENDARY end
+    if chance_pct < (settings.glyph_upgrade_threshold or 1) then return false end
+    -- Level-45 = legendary path; can_upgrade() is bugged at 45
+    if lvl == 45 then return settings.glyph_upgrade_legendary == true end
     return g:can_upgrade()
 end
 
@@ -76,8 +80,22 @@ local function attempt_upgrade()
     if task.last_interact_t + INTERACT_COOLDOWN > get_time_since_inject() then
         return
     end
-    -- Pick highest-level upgradable glyph
-    for i = 1, glyphs:size() do
+    -- Iteration order honors user's upgrade_mode setting:
+    --   1 = highest-to-lowest level (default; matches Arkham)
+    --   2 = lowest-to-highest level
+    -- We resolve the order once per call by sorting indices.
+    local order = {}
+    for i = 1, glyphs:size() do order[#order + 1] = i end
+    if settings.glyph_upgrade_mode == 2 then
+        table.sort(order, function (a, b)
+            return glyphs:get(a):get_level() < glyphs:get(b):get_level()
+        end)
+    else
+        table.sort(order, function (a, b)
+            return glyphs:get(a):get_level() > glyphs:get(b):get_level()
+        end)
+    end
+    for _, i in ipairs(order) do
         local g = glyphs:get(i)
         if should_upgrade(g, task.last_attempted_glyph) then
             task.last_attempted_glyph = g
