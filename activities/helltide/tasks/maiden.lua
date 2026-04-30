@@ -41,7 +41,7 @@ local function maiden_boss_present()
               or (actors_manager.get_all_actors and actors_manager:get_all_actors())
               or {}
     for _, a in pairs(list) do
-        local sn = a:get_skin_name and a:get_skin_name() or nil
+        local sn = a.get_skin_name and a:get_skin_name() or nil
         if sn and sn:find(MAIDEN_BOSS_PATTERN, 1, true) then return a end
     end
     return false

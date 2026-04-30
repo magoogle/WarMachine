@@ -99,18 +99,18 @@ local function find_floor_portal()
            and a.is_interactable and a:is_interactable()
         then
             -- Back-portal blacklist
+            local skip = false
             if tracker.back_portal_pos then
                 local p = a:get_position()
                 if p then
                     local dx = p:x() - tracker.back_portal_pos.x
                     local dy = p:y() - tracker.back_portal_pos.y
                     if dx*dx + dy*dy < BACK_PORTAL_RADIUS_SQ then
-                        goto continue
+                        skip = true
                     end
                 end
             end
-            return a
-            ::continue::
+            if not skip then return a end
         end
     end
     return nil
