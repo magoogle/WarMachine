@@ -22,6 +22,7 @@ local tracker          = require 'core.tracker'
 local warplan_state    = require 'core.warplan_state'
 local mode             = require 'core.mode'
 local activity_manager = require 'core.activity_manager'
+local alfred_bridge    = require 'core.alfred_bridge'
 
 local local_player, player_position
 local debounce_time    = nil
@@ -138,6 +139,14 @@ local main_pulse = function ()
     if local_player:is_dead() then
         revive_at_checkpoint()
     else
+        -- Alfred bridge: if bags are full / repair needed AND the active
+        -- in-house activity is in a safe-to-interrupt state, hand control
+        -- to AlfredTheButler for a town run.  Yields THIS pulse while
+        -- Alfred is running so we don't fight it for input.  Activities
+        -- self-deselect via shouldExecute() once Alfred teleports out of
+        -- the activity zone, then re-engage when the player is back.
+        if alfred_bridge.update() then return end
+
         -- Dispatch by mode.
         --
         -- WARPLAN: BOTH paths run.
