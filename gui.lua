@@ -180,6 +180,20 @@ gui.elements = {
     boss_altar_stuck_secs          = si(15, 120,   60, 'boss_altar_stuck_secs'),
     boss_chest_grace_secs          = si(0,  15,    4, 'boss_chest_grace_secs'),
     boss_auto_reset_after          = si(60,1800,  600,'boss_auto_reset_after'),
+    -- Boss selection (standalone mode only -- WarPlan picks for us).
+    boss_selection_mode            = co(0,        'boss_selection_mode'),  -- Specific / Random / Split
+    boss_primary                   = co(0,        'boss_primary'),         -- index into boss list
+    boss_secondary                 = co(1,        'boss_secondary'),
+    boss_enable_andariel           = cb(true,  'boss_enable_andariel'),
+    boss_enable_duriel             = cb(true,  'boss_enable_duriel'),
+    boss_enable_varshan            = cb(true,  'boss_enable_varshan'),
+    boss_enable_grigoire           = cb(true,  'boss_enable_grigoire'),
+    boss_enable_zir                = cb(true,  'boss_enable_zir'),
+    boss_enable_beast              = cb(true,  'boss_enable_beast'),
+    boss_enable_harbinger          = cb(false, 'boss_enable_harbinger'),
+    boss_enable_urivar             = cb(false, 'boss_enable_urivar'),
+    boss_enable_belial             = cb(false, 'boss_enable_belial'),
+    boss_enable_butcher            = cb(false, 'boss_enable_butcher'),
 
     -- War Plan automation toggles
     warplan_auto_tree   = tree_node:new(1),
@@ -521,11 +535,41 @@ gui.render = function ()
     end
 
     if gui.elements.boss_tree:push('Boss settings') then
-        render_menu_header('Boss-altar runs (Andariel / Duriel / Varshan / Grigoire / Lord Zir / Beast / Harbinger / Urivar / Belial / Butcher).  Engages once the player is in a Boss_WT*_* zone -- WarPlan teleports there for you, or pick "Boss" mode for standalone.')
+        render_menu_header('Boss-altar runs.  Standalone Boss mode auto-teleports between bosses based on the selection below.  WarPlan picks the boss for you (no auto-teleport).')
+
+        render_menu_header('Boss selection (standalone mode)')
+        local SELECTION_MODES = { 'Specific', 'Random', 'Split 50/50' }
+        gui.elements.boss_selection_mode:render('Selection mode', SELECTION_MODES,
+            'Specific: always run primary boss.  Random: pick from enabled bosses each run.  Split: alternate primary/secondary 50/50.')
+        local BOSS_LABELS = {
+            'Andariel (greater)', 'Duriel (greater)', 'Varshan (lower)',
+            'Grigoire (lower)',   'Lord Zir (lower)', 'Beast in Ice (lower)',
+            'Harbinger (greater)','Urivar (greater)', 'Belial (husk)',
+            'Bloody Butcher (greater)',
+        }
+        gui.elements.boss_primary:render('Primary boss', BOSS_LABELS,
+            'Used by Specific mode (always) and Split mode (one of the two).')
+        gui.elements.boss_secondary:render('Secondary boss', BOSS_LABELS,
+            'Split-mode partner.  Ignored by Specific / Random.')
+
+        render_menu_header('Random mode: which bosses to include')
+        gui.elements.boss_enable_andariel:render('  Andariel (greater key)',  'Random pool')
+        gui.elements.boss_enable_duriel:render('  Duriel (greater key)',      'Random pool')
+        gui.elements.boss_enable_varshan:render('  Varshan (lower key)',      'Random pool')
+        gui.elements.boss_enable_grigoire:render('  Grigoire (lower key)',    'Random pool')
+        gui.elements.boss_enable_zir:render('  Lord Zir (lower key)',         'Random pool')
+        gui.elements.boss_enable_beast:render('  Beast in Ice (lower key)',   'Random pool')
+        gui.elements.boss_enable_harbinger:render('  Harbinger (greater key)','Random pool')
+        gui.elements.boss_enable_urivar:render('  Urivar (greater key)',      'Random pool')
+        gui.elements.boss_enable_belial:render('  Belial (husks)',            'Random pool -- needs Corrupted Vessels')
+        gui.elements.boss_enable_butcher:render('  Bloody Butcher (greater key)', 'Random pool')
+
+        render_menu_header('Combat')
         gui.elements.boss_kill_monsters:render('Kill monsters', 'Engage boss + adds + suppressors after the altar is clicked')
         gui.elements.boss_kill_range:render('Kill range', 'Aggro radius around the player')
         gui.elements.boss_room_tether:render('Boss-room tether', 'Walk back toward the boss room anchor when no enemy is in range')
         gui.elements.boss_do_chests:render('Open reward chests', 'After the boss dies, click EGB / Theme reward chests')
+
         render_menu_header('Run lifecycle')
         gui.elements.boss_altar_stuck_secs:render('Altar stuck timeout (s)',
             'If the altar is clicked but no chest appears within this window, reset the run')

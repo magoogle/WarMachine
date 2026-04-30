@@ -31,6 +31,53 @@ M.altar_skins = {
 M.altar_skin_set = {}
 for _, n in ipairs(M.altar_skins) do M.altar_skin_set[n] = true end
 
+-- Boss-id -> human label + zone prefix + SNO id (for teleport_to_boss_dungeon)
+-- + key_tier (which summon resource the altar consumes).  Per S12+ in-game
+-- looter scans:
+--   key_tier = 'greater' -> Duriel, Andariel, Harbinger, Butcher
+--   key_tier = 'lower'   -> Varshan, Lord Zir, Beast in Ice, Grigoire
+--   key_tier = 'husk'    -> Belial (Corrupted Vessels, separate item)
+--   key_tier = 'greater' -> Urivar (assumed WT5 -> greater; verify in-game)
+-- SNO ids ported from Reaper/core/map_nav.lua's BOSS_SNO table.
+M.bosses = {
+    { id = 'andariel',  label = 'Andariel',            zone_prefix = 'Boss_WT4_Andariel',
+                                                       sno = 1807180, key_tier = 'greater' },
+    { id = 'duriel',    label = 'Duriel',              zone_prefix = 'Boss_WT4_Duriel',
+                                                       sno = 1496160, key_tier = 'greater' },
+    { id = 'varshan',   label = 'Varshan',             zone_prefix = '_Varshan',
+                                                       sno = 1496113, key_tier = 'lower' },
+    { id = 'grigoire',  label = 'Grigoire',            zone_prefix = 'Boss_WT3_PenitentKnight',
+                                                       sno = 1496130, key_tier = 'lower' },
+    { id = 'zir',       label = 'Lord Zir',            zone_prefix = 'Boss_WT4_S2VampireLord',
+                                                       sno = 1496144, key_tier = 'lower' },
+    { id = 'beast',     label = 'Beast in Ice',        zone_prefix = 'Boss_WT4_MegaDemon',
+                                                       sno = 1496152, key_tier = 'lower' },
+    { id = 'harbinger', label = 'Harbinger of Hatred', zone_prefix = 'Boss_WT5_Harbinger',
+                                                       sno = 2191385, key_tier = 'greater' },
+    { id = 'urivar',    label = 'Urivar',              zone_prefix = 'Boss_WT5_Urivar',
+                                                       sno = 2191378, key_tier = 'greater' },
+    { id = 'belial',    label = 'Belial',              zone_prefix = 'Boss_Kehj_Belial',
+                                                       sno = 2166288, key_tier = 'husk' },
+    { id = 'butcher',   label = 'Bloody Butcher',      zone_prefix = 'S12_Boss_Butcher',
+                                                       sno = 2553700, key_tier = 'greater' },
+}
+
+-- id -> boss table lookup
+M.bosses_by_id = {}
+for _, b in ipairs(M.bosses) do M.bosses_by_id[b.id] = b end
+
+-- Summon-resource item ids (from in-game looter scans).  These replaced
+-- the per-boss mats in S12.  We don't currently consume them
+-- programmatically -- the altar interaction does that automatically when
+-- the player has them in inventory -- but we expose the ids so a future
+-- inventory-counter can drive boss selection based on what's available.
+M.summon_resources = {
+    lower   = 2558178,    -- Lower Lair Key  (QST_Template_Flippy_Keys_08 r=5)
+    greater = 2558255,    -- Greater Lair Key (QST_Template_Flippy_Keys_08 r=6)
+    husk    = 2194099,    -- Corrupted Vessel / Husk (S08_Prop_Corrupted_Vessel_Flippy r=6)
+                          -- Used by Belial only.
+}
+
 -- Boss zone prefixes.  zone_matches() returns true when the current world's
 -- zone name starts with / contains one of these.  Used by WarPlan zone
 -- classification + the in_boss_zone() guard in api.lua.
@@ -117,6 +164,18 @@ M.is_altar = function (actor)
     if not actor or not actor.get_skin_name then return false end
     local sn = actor:get_skin_name()
     return sn and M.altar_skin_set[sn] == true
+end
+
+-- Given a zone name, return the boss table whose zone_prefix matches.
+-- Used by select_boss to decide whether the bot is already where it
+-- wants to be (no need to teleport) or in a wrong boss zone (teleport
+-- to the actual target).
+M.boss_for_zone = function (zone_name)
+    if not zone_name then return nil end
+    for _, b in ipairs(M.bosses) do
+        if zone_name:find(b.zone_prefix, 1, true) then return b end
+    end
+    return nil
 end
 
 -- True when the actor is one of the post-kill reward chests.

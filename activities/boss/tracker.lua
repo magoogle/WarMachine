@@ -17,6 +17,12 @@ local tracker = {
     run_done          = false,
     run_start_t       = nil,
     boss_quest_seen   = false,    -- mirrors Reaper's boss_quest_present sticky bit
+
+    -- Selection / rotation state (standalone mode).  WarPlan ignores these.
+    target_boss_id    = nil,      -- which boss we want to be running
+    last_run_boss_id  = nil,      -- which boss we ran last cycle (for split alternation)
+    last_teleport_t   = nil,      -- wall-clock of last teleport_to_boss_dungeon call
+
     current_task      = { name = 'idle', status = 'idle' },
 }
 
@@ -30,6 +36,8 @@ tracker.reset_run = function ()
     tracker.run_done          = false
     tracker.run_start_t       = get_time_since_inject and get_time_since_inject() or 0
     tracker.boss_quest_seen   = false
+    -- Don't clear target_boss_id / last_run_boss_id / last_teleport_t here
+    -- -- they persist across runs so the rotation flow works.
     tracker.current_task      = { name = 'idle', status = 'idle' }
 end
 

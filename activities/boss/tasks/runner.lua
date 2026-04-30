@@ -5,7 +5,11 @@ local make_freeroam  = require 'core.freeroam'
 
 local R = {}
 
--- Priority chain mirrors hordes/runner:
+-- Priority chain.  Order matters; each task's shouldExecute() decides
+-- whether to claim the pulse.
+--   select_boss       -- standalone-only: teleport to the next boss in the
+--                        rotation.  WarPlan mode short-circuits this so it
+--                        doesn't fight WarPlan's Next-Obj clicks.
 --   exit              -- run-complete (chest opened) or safety timeout
 --   interact_altar    -- click the summon altar
 --   open_chest        -- post-kill reward chest
@@ -14,6 +18,7 @@ local R = {}
 --   freeroam_fallback -- Batmobile freeroam if nothing else fires
 --   idle
 local TASK_FILES = {
+    'select_boss',
     'exit',
     'interact_altar',
     'open_chest',
