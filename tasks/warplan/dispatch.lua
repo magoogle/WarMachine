@@ -43,6 +43,12 @@ local function classify_zone(zone)
     if zone:match('^X1_Undercity_') then return 'undercity' end
     if zone:match('^PIT_') then return 'pit' end
     if zone == 'S05_BSK_Prototype02' or zone:match('^S05_BSK_') then return 'hordes' end
+    -- Boss-altar zones: Boss_WT3_*, Boss_WT4_*, Boss_WT5_*, Boss_Kehj_*
+    -- (Belial), S12_Boss_* (Butcher), and any *_Varshan variant.  Keep
+    -- this AFTER the others so PIT_/X1_/S05_BSK_ match first.
+    if zone:match('^Boss_') or zone:match('^S12_Boss_') or zone:find('_Varshan', 1, true) then
+        return 'boss'
+    end
     return 'overworld'    -- could be helltide, world boss zone, or unrelated
 end
 
@@ -63,6 +69,7 @@ local function zone_matches_activity(zone, activity)
     -- ever changes to land us in Caldeum first, add `or zc == 'overworld'`
     -- and let HordeDev's walking_to_horde drive the gate (un-gate that task).
     if activity == 'hordes'    then return zc == 'hordes'    end
+    if activity == 'boss'      then return zc == 'boss'      end
     if activity == 'turnin'    then return zc == 'temis'     end
     return false
 end

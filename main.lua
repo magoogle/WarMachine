@@ -64,6 +64,7 @@ local broadcast_warmachine_mode = function (active)
     broadcast(SigilRunnerPlugin,      'SigilRunnerPlugin')
     broadcast(WonderCityPlugin,       'WonderCityPlugin')
     broadcast(InfernalHordesPlugin,   'InfernalHordesPlugin')
+    broadcast(ReaperPlugin,           'ReaperPlugin')
 end
 
 -- When WarMachine is disabled (or the user changes mode), make sure no

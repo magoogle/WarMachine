@@ -54,7 +54,7 @@ end
 -- isn't yet ported gracefully reports `is_loaded() = false` so the GUI can
 -- grey out its mode in the dropdown.
 -- ---------------------------------------------------------------------------
-local KNOWN_ACTIVITIES = { 'pit', 'undercity', 'helltide', 'nmd', 'hordes' }
+local KNOWN_ACTIVITIES = { 'pit', 'undercity', 'helltide', 'nmd', 'hordes', 'boss' }
 
 local function load_all()
     for _, tag in ipairs(KNOWN_ACTIVITIES) do

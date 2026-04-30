@@ -70,6 +70,24 @@ local ACTIVITY_PATTERNS = {
     { pat = 'InfernalHordes',   activity = 'hordes'    },
     { pat = 'InfernalHorde',    activity = 'hordes'    },
     { pat = 'Horde',            activity = 'hordes'    },
+    -- Boss-altar war plans.  Quest names observed: `WarPlans_QST_<Boss>`
+    -- e.g. `_Andariel`, `_Duriel`, `_Varshan`, `_Grigoire`, `_LordZir`,
+    -- `_BeastInIce`, `_Harbinger`, `_Urivar`, `_Belial`, `_Butcher`.
+    -- Substring match against any of those names; ordered before any
+    -- generic patterns so they take precedence.
+    { pat = 'Andariel',         activity = 'boss'      },
+    { pat = 'Duriel',           activity = 'boss'      },
+    { pat = 'Varshan',          activity = 'boss'      },
+    { pat = 'Grigoire',         activity = 'boss'      },
+    { pat = 'PenitentKnight',   activity = 'boss'      },   -- Grigoire altar variant
+    { pat = 'LordZir',          activity = 'boss'      },
+    { pat = 'VampireLord',      activity = 'boss'      },   -- Zir alt naming
+    { pat = 'BeastInIce',       activity = 'boss'      },
+    { pat = 'MegaDemon',        activity = 'boss'      },   -- Beast alt naming
+    { pat = 'Harbinger',        activity = 'boss'      },
+    { pat = 'Urivar',           activity = 'boss'      },
+    { pat = 'Belial',           activity = 'boss'      },
+    { pat = 'Butcher',          activity = 'boss'      },
 }
 
 local function classify_activity(name)

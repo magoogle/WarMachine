@@ -105,6 +105,7 @@ local PLUGIN_FOR_ACTIVITY = {
     undercity = 'wondercity',
     pit       = 'arkhamasylum',
     hordes    = 'hordedev',
+    boss      = 'reaper',
 }
 
 local function get_plugin(tag)
@@ -113,6 +114,7 @@ local function get_plugin(tag)
     if tag == 'wondercity'   then return WonderCityPlugin end
     if tag == 'arkhamasylum' then return ArkhamAsylumPlugin end
     if tag == 'hordedev'     then return InfernalHordesPlugin end
+    if tag == 'reaper'       then return ReaperPlugin end
     return nil
 end
 
@@ -144,6 +146,11 @@ local function classify_zone(zone)
     -- Infernal Hordes arena (S05_BSK_Prototype02 historically; if the host
     -- ever splits Hordes into multiple zone names, prefix-match here).
     if zone == 'S05_BSK_Prototype02' or zone:match('^S05_BSK_') then return 'hordes' end
+    -- Boss-altar zones (Andariel/Duriel/Varshan/Grigoire/Zir/Beast/Harbinger
+    -- /Urivar/Belial/Butcher).  Mirrors dispatch.classify_zone.
+    if zone:match('^Boss_') or zone:match('^S12_Boss_') or zone:find('_Varshan', 1, true) then
+        return 'boss'
+    end
     return 'overworld'
 end
 
@@ -156,6 +163,7 @@ local function in_activity_zone(zone, activity)
     if activity == 'helltide'  then return zc == 'overworld' end
     if activity == 'pit'       then return zc == 'pit'       end
     if activity == 'hordes'    then return zc == 'hordes'    end
+    if activity == 'boss'      then return zc == 'boss'      end
     return false
 end
 

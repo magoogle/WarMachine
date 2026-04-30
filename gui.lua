@@ -167,6 +167,16 @@ gui.elements = {
     hordes_pylon_pick_timeout      = si(2,   30,    8, 'hordes_pylon_pick_timeout'),
     hordes_auto_reset_after        = si(120,3000, 1500,'hordes_auto_reset_after'),
 
+    -- ---- Boss-altar activity settings ----
+    boss_tree                      = tree_node:new(1),
+    boss_kill_monsters             = cb(true, 'boss_kill_monsters'),
+    boss_do_chests                 = cb(true, 'boss_do_chests'),
+    boss_kill_range                = si(5,   60,   25, 'boss_kill_range'),
+    boss_room_tether               = si(5,   30,   15, 'boss_room_tether'),
+    boss_altar_stuck_secs          = si(15, 120,   60, 'boss_altar_stuck_secs'),
+    boss_chest_grace_secs          = si(0,  15,    4, 'boss_chest_grace_secs'),
+    boss_auto_reset_after          = si(60,1800,  600,'boss_auto_reset_after'),
+
     -- War Plan automation toggles
     warplan_auto_tree   = tree_node:new(1),
     warplan_auto_next_obj = cb(true,  'warplan_auto_next_obj'),
@@ -497,6 +507,21 @@ gui.render = function ()
         render_menu_header('Run lifecycle')
         gui.elements.hordes_auto_reset_after:render('Auto-reset after (s)', 'Safety net')
         gui.elements.hordes_tree:pop()
+    end
+
+    if gui.elements.boss_tree:push('Boss settings') then
+        render_menu_header('Boss-altar runs (Andariel / Duriel / Varshan / Grigoire / Lord Zir / Beast / Harbinger / Urivar / Belial / Butcher).  Engages once the player is in a Boss_WT*_* zone -- WarPlan teleports there for you, or pick "Boss" mode for standalone.')
+        gui.elements.boss_kill_monsters:render('Kill monsters', 'Engage boss + adds + suppressors after the altar is clicked')
+        gui.elements.boss_kill_range:render('Kill range', 'Aggro radius around the player')
+        gui.elements.boss_room_tether:render('Boss-room tether', 'Walk back toward the boss room anchor when no enemy is in range')
+        gui.elements.boss_do_chests:render('Open reward chests', 'After the boss dies, click EGB / Theme reward chests')
+        render_menu_header('Run lifecycle')
+        gui.elements.boss_altar_stuck_secs:render('Altar stuck timeout (s)',
+            'If the altar is clicked but no chest appears within this window, reset the run')
+        gui.elements.boss_chest_grace_secs:render('Chest grace (s)',
+            'Wait this long after the chest opens before declaring the run done (so VFX + loot windows finish)')
+        gui.elements.boss_auto_reset_after:render('Auto-reset after (s)', 'Safety net: full reset_all_dungeons if a run drags this long')
+        gui.elements.boss_tree:pop()
     end
 
     if gui.elements.debug_tree:push('Debug') then

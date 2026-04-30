@@ -19,6 +19,7 @@ mode.UNDERCITY = 3
 mode.PIT       = 4
 mode.HORDES    = 5
 mode.HELLTIDE  = 6
+mode.BOSS      = 7
 
 mode.labels = {
     [0] = 'Idle',
@@ -28,11 +29,12 @@ mode.labels = {
     [4] = 'Pit',
     [5] = 'Hordes',
     [6] = 'Helltide',
+    [7] = 'Boss',
 }
 
 -- Order shown in the GUI combo box.  WarPlan first because it's the
 -- "everything in one" autopilot most users will pick.
-mode.dropdown_order = { 'IDLE', 'WARPLAN', 'NIGHTMARE', 'UNDERCITY', 'PIT', 'HORDES', 'HELLTIDE' }
+mode.dropdown_order = { 'IDLE', 'WARPLAN', 'NIGHTMARE', 'UNDERCITY', 'PIT', 'HORDES', 'HELLTIDE', 'BOSS' }
 
 mode.dropdown_labels = (function ()
     local out = {}
@@ -68,6 +70,7 @@ mode.activity_for = function (m)
     if m == mode.PIT       then return 'pit'       end
     if m == mode.HORDES    then return 'hordes'    end
     if m == mode.HELLTIDE  then return 'helltide'  end
+    if m == mode.BOSS      then return 'boss'      end
     return nil
 end
 
