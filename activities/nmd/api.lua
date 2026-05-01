@@ -5,6 +5,9 @@ local settings_mod  = require 'activities.nmd.settings'
 local tracker       = require 'activities.nmd.tracker'
 local runner        = require 'activities.nmd.tasks.runner'
 
+local core_mode     = require 'core.mode'
+local zone          = require 'core.zone'
+
 local M = {}
 
 M.tag   = 'nmd'
@@ -12,19 +15,14 @@ M.label = 'Nightmare'
 
 M.is_loaded = function () return true end
 
-local function in_dungeon()
-    local w = get_current_world()
-    if not w or not w.get_current_zone_name then return false end
-    local z = w:get_current_zone_name()
-    return z and z:sub(1, 4) == 'DGN_'
-end
-
 M.shouldExecute = function ()
-    -- Standalone NMD mode runs only inside DGN_* zones.  Entry (sigil
-    -- consume + map click) is deferred -- WarPlan drives it via Next-Obj
-    -- and standalone mode expects the user to have pre-entered a dungeon
-    -- (or restock_sigils + start_dungeon to be ported in v0.2).
-    return in_dungeon()
+    -- Inside a DGN_* zone we always engage (kill/loot/exit pipeline).
+    if zone.in_dungeon() then return true end
+    -- Outside a dungeon we only engage in standalone NIGHTMARE so
+    -- select_dungeon can consume a sigil and start the next run.
+    -- WarPlan owns transit, so we stay quiet there.
+    if core_mode.is(core_mode.NIGHTMARE) then return true end
+    return false
 end
 
 M.pulse = function ()
@@ -38,28 +36,31 @@ end
 M.get_status = function ()
     local cur = tracker.current_task or {}
     return {
-        task          = cur.name or 'idle',
-        status        = cur.status,
-        floor         = tracker.current_floor,
-        boss_seen     = tracker.boss_seen,
-        dungeon_done  = tracker.dungeon_done,
+        task               = cur.name or 'idle',
+        status             = cur.status,
+        floor              = tracker.current_floor,
+        boss_seen          = tracker.boss_seen,
+        boss_killed_at     = tracker.boss_killed_at,
+        dungeon_done       = tracker.dungeon_done,
+        nmd_quest_seen     = tracker.nmd_quest_seen,
+        nmd_quest_complete = tracker.nmd_quest_complete,
+        cursed_started     = tracker.cursed_started,
+        cursed_complete    = tracker.cursed_complete,
     }
 end
 
 M.activate = function ()
     tracker.reset_run()
-    if BatmobilePlugin and BatmobilePlugin.resume then
-        pcall(BatmobilePlugin.resume, 'warmachine_nmd')
-    end
     if SigilRunnerPlugin and SigilRunnerPlugin.disable then
         pcall(SigilRunnerPlugin.disable)
     end
 end
 
 M.deactivate = function ()
-    if BatmobilePlugin and BatmobilePlugin.clear_target then
-        pcall(BatmobilePlugin.clear_target, 'warmachine_nmd')
-    end
+    -- Stop any in-flight walker target so the player doesn't keep
+    -- walking when we transition activities or shut down.
+    local ok, walker = pcall(require, 'core.walker')
+    if ok and walker and walker.stop then walker.stop() end
 end
 
 return M

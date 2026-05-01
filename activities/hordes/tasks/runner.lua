@@ -1,7 +1,12 @@
 -- activities/hordes/tasks/runner.lua
 
-local tracker        = require 'activities.hordes.tracker'
-local make_freeroam  = require 'core.freeroam'
+local tracker = require 'activities.hordes.tracker'
+
+-- NOTE: hordes does NOT use core/freeroam (the embedded explorer).
+-- The horde arena is small + fully catalogued by WarPath / StaticPather,
+-- so explorer's frontier-search adds no value here and would just spam
+-- pathfinder.calculate_and_get_path_points calls.  walk_boss_room
+-- (quest-directed) is sufficient for the "no enemy in range" case.
 
 local R = {}
 
@@ -39,12 +44,9 @@ for _, name in ipairs(TASK_FILES) do
     else console.print('[Hordes] task load failed: ' .. name .. ' err=' .. tostring(t)) end
 end
 
--- Insert the Batmobile freeroam fallback just before idle.  This keeps the
--- bot moving when nothing else has a target -- e.g. between waves with no
--- enemies in stream, or after teleport-in before the first wave starts,
--- or in zones with no POI catalogue yet.
-local idle_idx = #tasks    -- idle is the last entry
-table.insert(tasks, idle_idx, make_freeroam('warmachine_hordes'))
+-- (No freeroam fallback inserted -- hordes intentionally relies on
+-- catalog data + walk_boss_room.  Adding the explorer here would
+-- thrash pathfinder for no benefit on the tiny BSK arena.)
 
 local last_pulse_t = 0
 local PULSE_INTERVAL_S = 0.05

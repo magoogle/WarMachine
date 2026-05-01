@@ -16,7 +16,8 @@
 -- moves and cinder counts as we open chests.
 -- ---------------------------------------------------------------------------
 
-local enums = require 'activities.helltide.data.enums'
+local enums       = require 'activities.helltide.data.enums'
+local quest_state = require 'activities.helltide.quest_state'
 
 local M = {}
 
@@ -123,6 +124,25 @@ local function score_poi(poi, ctx)
         end
     end
 
+    -- WarPlan directive bonus: when a Helltide WarPlan is active and its
+    -- objective is asking for a specific chest type, bump that type's
+    -- weight so the bot prioritizes it over generic chests.  Without
+    -- this bias the priority queue would still WORK (Tortured Gifts
+    -- already top the table at 1000), but multi-step objectives like
+    -- "open 3 silent chests" would walk past silents to grab tortured
+    -- gifts that don't tick the counter.
+    if ctx.directive then
+        if ctx.directive == 'tortured_gifts'
+           and poi.kind == 'chest_helltide_targeted'
+        then weight = weight + 400 end
+        if ctx.directive == 'silent_chests'
+           and poi.kind == 'chest_helltide_silent'
+        then weight = weight + 400 end
+        if ctx.directive == 'random_chests'
+           and (poi.kind == 'chest_helltide_random' or poi.kind == 'chest')
+        then weight = weight + 400 end
+    end
+
     -- Distance penalty
     local d2 = dist2_player(poi)
     local d  = math.sqrt(d2)
@@ -161,11 +181,21 @@ M.build = function (tracker, settings, maiden_active)
         return out
     end
 
+    -- Read the live WarPlan helltide objective (if any) so we can bias
+    -- chest scoring toward whatever the quest is asking for.  Standalone
+    -- mode returns nil here -- ctx.directive stays nil and the priority
+    -- queue runs in its default "open the most valuable thing nearest"
+    -- mode, which is what the user wants for standalone ("just run
+    -- around opening as many chests as we can").
+    local wp = quest_state.read()
+    local directive = wp and wp.directive or nil
+
     local ctx = {
         visited       = tracker.visited,
         settings      = settings,
         cinders       = get_cinders(),
         maiden_active = maiden_active,
+        directive     = directive,
     }
     for _, a in ipairs(actors) do
         local s, d = score_poi(a, ctx)

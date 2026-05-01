@@ -188,4 +188,48 @@ M.is_reward_chest = function (actor)
     return false
 end
 
+-- Count summon-resource items of `tier` ('greater' | 'lower' | 'husk') in
+-- the player's inventory.  Returns 0 when not enumerable (no inventory
+-- access, no items, etc.).  Used by open_chest to decide whether we
+-- have the resource to claim the chest.
+M.count_keys = function (tier)
+    local lp = get_local_player()
+    if not lp or not lp.get_inventory_items then return 0 end
+    local target_id = M.summon_resources[tier]
+    if not target_id then return 0 end
+    local items = lp:get_inventory_items() or {}
+    local count = 0
+    for _, item in ipairs(items) do
+        -- The host exposes either get_sno_id or the older get_id depending
+        -- on version.  Try both; default to skin-name pattern if neither.
+        local sno = nil
+        if item.get_sno_id then
+            local ok, v = pcall(function () return item:get_sno_id() end)
+            if ok then sno = v end
+        end
+        if not sno and item.get_id then
+            local ok, v = pcall(function () return item:get_id() end)
+            if ok then sno = v end
+        end
+        if sno == target_id then
+            -- Honor stack count when available; default to 1.
+            local stack = 1
+            if item.get_stack_count then
+                local ok, v = pcall(function () return item:get_stack_count() end)
+                if ok and type(v) == 'number' then stack = v end
+            end
+            count = count + stack
+        end
+    end
+    return count
+end
+
+-- True when the player has at least one key/resource matching the given
+-- boss's tier.  `boss_id` is one of the M.bosses_by_id keys.
+M.has_key_for = function (boss_id)
+    local b = M.bosses_by_id[boss_id]
+    if not b then return false end
+    return M.count_keys(b.key_tier) > 0
+end
+
 return M

@@ -33,22 +33,17 @@ local function in_hordes()
     return z and (z:find('BSK_', 1, true) ~= nil)
 end
 
-local function chest_visible()
-    if not actors_manager or not actors_manager.get_all_actors then return false end
-    for _, a in pairs(actors_manager:get_all_actors()) do
-        local sn = a.get_skin_name and a:get_skin_name() or ''
-        if sn:find('Chest', 1, true)
-           and a.is_interactable and a:is_interactable() then
-            return true
-        end
-    end
-    return false
-end
-
 task.shouldExecute = function ()
     if not in_hordes() then return false end
-    -- Path 1: run-complete handoff (preferred)
-    if tracker.chest_opened and not chest_visible() then
+    -- Path 1: run-complete handoff.  Drives off the open_chest task's
+    -- chest_phase_done latch -- which only flips true once every enabled
+    -- chest type is either successfully opened OR marked-failed
+    -- (insufficient aether).  Old `chest_opened AND not chest_visible`
+    -- was racy: chest_opened got set on first click attempt regardless
+    -- of outcome, and chest_visible saw rejected chests as "still
+    -- interactable" so the run never declared done after a rejected
+    -- click.  See open_chest.lua header for the rewrite rationale.
+    if tracker.chest_phase_done then
         return true
     end
     -- Path 2: safety timeout
@@ -64,7 +59,7 @@ task.Execute = function ()
     -- Run-complete branch: signal run_done so WarPlan can advance.  In
     -- standalone mode (no warplan_active), also call reset_all_dungeons
     -- to start the next run.
-    if tracker.chest_opened and not chest_visible() then
+    if tracker.chest_phase_done then
         if not tracker.run_done then
             tracker.run_done = true
             if settings.debug_mode then console.print('[Hordes] run_done set; awaiting handoff') end

@@ -65,6 +65,24 @@ settings.update_settings = function ()
     settings.warplan.auto_turn_in       = gui.elements.warplan_auto_turn_in:get()
     settings.warplan.auto_select        = gui.elements.warplan_auto_select:get()
     settings.warplan.auto_cycle         = gui.elements.warplan_auto_cycle:get()
+    settings.warplan.whisper_turn_in    = gui.elements.warplan_whisper_turn_in
+                                              and gui.elements.warplan_whisper_turn_in:get()
+                                              or false
+    -- Click points are stored in the GUI as integer percentages so the
+    -- slider widget works; convert to 0..1 fractions for the click code.
+    -- Defensive `and ... or default` so a missing GUI element falls back
+    -- to the canonical default.
+    local function pct_frac(elem, default_pct)
+        if not elem then return default_pct / 100.0 end
+        return (elem:get() or default_pct) / 100.0
+    end
+    settings.warplan.whisper_reward_x_frac = pct_frac(gui.elements.warplan_whisper_reward_x_pct, 40)
+    settings.warplan.whisper_reward_y_frac = pct_frac(gui.elements.warplan_whisper_reward_y_pct, 55)
+    settings.warplan.whisper_accept_x_frac = pct_frac(gui.elements.warplan_whisper_accept_x_pct, 50)
+    settings.warplan.whisper_accept_y_frac = pct_frac(gui.elements.warplan_whisper_accept_y_pct, 85)
+    settings.warplan.show_whisper_points   = gui.elements.warplan_show_whisper_points
+                                                and gui.elements.warplan_show_whisper_points:get()
+                                                or false
     settings.warplan.show_click_points  = gui.elements.warplan_show_points:get()
 
     -- Row Y values are shared across the 3 slots in each row -- the

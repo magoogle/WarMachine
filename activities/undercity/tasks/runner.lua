@@ -8,8 +8,11 @@ local R = {}
 local TASK_FILES = {
     'exit',                -- chest looted / auto-reset / warp pad ready
     'goto_chest',          -- attunement chest after boss kill
+    'interact_enticement', -- live-stream SpiritHearth/Beacon clicks.
+                           -- Higher priority than floor_portal so we
+                           -- consume enticements BEFORE descending.
     'floor_portal',        -- descend via X1_Undercity_PortalSwitch
-    'interact_poi',        -- enticements, shrines, side chests
+    'interact_poi',        -- enticements, shrines, side chests (catalog)
     'kill_monster',        -- fallback combat
     'enter_undercity',     -- standalone: town brazier flow
     'idle',

@@ -102,18 +102,18 @@ M.to_pos = function (goal, opts)
         -- StaticPather couldn't find a path; fall through to Batmobile.
     end
 
-    -- Tier 3: Batmobile
-    if BatmobilePlugin then
-        local caller = opts.batmobile_caller or 'warmachine'
-        if BatmobilePlugin.set_target then
-            BatmobilePlugin.set_target(caller, goal)
-        end
-        if BatmobilePlugin.update then BatmobilePlugin.update(caller) end
-        if BatmobilePlugin.move   then BatmobilePlugin.move(caller)   end
-        return 'walking'
-    end
-
-    return 'no_path'
+    -- Tier 3: internal walker.  Was Batmobile; we now hard-code an
+    -- equivalent in core/walker.lua so WarMachine has no runtime
+    -- dependency on the Batmobile plugin (which is no longer being
+    -- maintained).  walker.set_target + walker.tick mirrors the
+    -- former BatmobilePlugin.set_target + .update + .move pattern --
+    -- path planning via pathfinder.calculate_and_get_path_points,
+    -- node-by-node walk via pathfinder.request_move, evade-based
+    -- unstick on stuck detection.
+    local walker = require 'core.walker'
+    walker.set_target(goal)
+    walker.tick()
+    return 'walking'
 end
 
 -- ---------------------------------------------------------------------------
@@ -127,15 +127,17 @@ M.to_actor_or_pos = function (actor, fallback_pos, opts)
 end
 
 -- ---------------------------------------------------------------------------
--- Stop / clear any in-flight movement.  Activity tasks call this when they
--- decide they're done with a target so Batmobile doesn't keep walking.
--- (Tier 1/2 don't have stick-iness; only tier 3 needs clearing.)
+-- Stop / clear any in-flight movement.  Activity tasks call this when
+-- they decide they're done with a target so the walker doesn't keep
+-- driving the player.  (Tier 1/2 don't have stick-iness; only the
+-- tier-3 walker maintains a target across calls.)
+--
+-- `caller` parameter retained for source-compat with old call sites
+-- that passed a Batmobile-style caller string; ignored internally.
 -- ---------------------------------------------------------------------------
 M.clear = function (caller)
-    caller = caller or 'warmachine'
-    if BatmobilePlugin and BatmobilePlugin.clear_target then
-        BatmobilePlugin.clear_target(caller)
-    end
+    local walker = require 'core.walker'
+    walker.stop()
 end
 
 return M

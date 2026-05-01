@@ -12,7 +12,8 @@ local M = {
     do_chests         = true,
     do_enticements    = true,    -- spirit beacons + hearths
     max_hearths       = 4,        -- hard cap on SpiritHearth_Switch interactions
-    enticement_timeout = 4,       -- s; stop waiting at a beacon after this
+    enticement_timeout = 4,       -- s; stop waiting at a hearth after this
+    beacon_timeout    = 8,        -- s; longer window for beacons (event triggers)
 
     -- Run pacing
     auto_reset_after  = 600,
@@ -40,6 +41,7 @@ M.update = function ()
     M.do_enticements    = bget('uc_do_enticements',    true)
     M.max_hearths       = bget('uc_max_hearths',       4)
     M.enticement_timeout = bget('uc_enticement_timeout', 4)
+    M.beacon_timeout    = bget('uc_beacon_timeout',    8)
     M.auto_reset_after  = bget('uc_auto_reset_after',  600)
     M.exit_after_chest  = bget('uc_exit_after_chest',  true)
     M.speed_run         = bget('uc_speed_run',         false)

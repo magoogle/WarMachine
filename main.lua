@@ -23,6 +23,9 @@ local warplan_state    = require 'core.warplan_state'
 local mode             = require 'core.mode'
 local activity_manager = require 'core.activity_manager'
 local alfred_bridge    = require 'core.alfred_bridge'
+local labels           = require 'core.labels'
+local find             = require 'core.find'
+local rotation_bridge  = require 'core.rotation_bridge'
 
 local local_player, player_position
 local debounce_time    = nil
@@ -103,6 +106,8 @@ local main_pulse = function ()
     if not settings.enabled or not settings.get_keybind_state() then return end
 
     if tracker.bot_done then return end
+    -- Note: floor-drop pickup is Looteer's job, not WarMachine's.
+    -- We don't toggle orbwalker auto-loot here.
 
     -- Track zone transitions for downstream phases.
     local zone = get_current_world() and get_current_world():get_current_zone_name() or nil
@@ -172,6 +177,21 @@ local main_pulse = function ()
         elseif settings.mode ~= mode.IDLE then
             activity_manager.pulse(settings.mode)
         end
+
+        -- Cross-plugin "we're traveling" signal for the user's
+        -- UniversalRotation plugin.  When no enemy is within melee
+        -- range, we're in a movement / interaction phase -- the
+        -- rotation should only fire self-cast spells (defensives,
+        -- buffs) and skip targeted offensives.  When an enemy is
+        -- close, rotation runs at full power.
+        --
+        -- See core/rotation_bridge.lua for the contract; the rotation
+        -- side reads _G.WARMACHINE_TRAVEL_MODE and gates non-self_cast
+        -- spell casts on it.  6y matches "melee engagement starting"
+        -- range -- ranged combat fires past it but at melee range we
+        -- want the full kit available.
+        local TRAVEL_THRESHOLD_M = 6
+        rotation_bridge.set_travel_mode(not find.any_enemy_in_range(TRAVEL_THRESHOLD_M))
     end
 end
 
@@ -232,13 +252,46 @@ local render_pulse = function ()
     -- (NMD, Pit, and Helltide standalone modes were removed -- the
     -- corresponding sub-plugins handle their own click points.)
 
+    -- Whispers click-point overlay (Reward card + Accept button).  Drawn
+    -- as fractional screen positions so what you see is what the click
+    -- task will fire.  Independent toggle so the user can dial these in
+    -- WITHOUT toggling on the auto-turn-in feature -- they just walk to
+    -- a Raven, open the panel manually, and adjust sliders until the
+    -- crosshairs sit on the cards.
+    if settings.warplan and settings.warplan.show_whisper_points then
+        local sw = settings.warplan
+        local W, H = get_screen_width(), get_screen_height()
+        local rx = math.floor(W * (sw.whisper_reward_x_frac or 0.40))
+        local ry = math.floor(H * (sw.whisper_reward_y_frac or 0.55))
+        local ax = math.floor(W * (sw.whisper_accept_x_frac or 0.50))
+        local ay = math.floor(H * (sw.whisper_accept_y_frac or 0.85))
+        draw_crosshair(rx, ry, 'Whisper Reward', color_green(220))
+        draw_crosshair(ax, ay, 'Whisper Accept', color_red(220))
+    end
+
     if not local_player or not settings.enabled then return end
     if not settings.get_keybind_state() then return end
 
-    local cur     = task_manager.get_current_task()
-    local task_str = cur.name
-    if cur.status ~= nil then
-        task_str = cur.name .. ' (' .. tostring(cur.status) .. ')'
+    -- Build the "Task" line.  Prefer the active activity's status when
+    -- WarMachine is in WARPLAN/standalone mode and an activity is running,
+    -- because that's the in-zone gameplay description the user cares
+    -- about (Killing monsters / Looking for objective / Exploring).
+    -- Fall back to the WarPlan task_manager's task name for the
+    -- transit/turn-in phases when no activity is active.
+    local task_str
+    local active_tag = activity_manager.get_active_tag and activity_manager.get_active_tag() or nil
+    if active_tag then
+        local act_status = activity_manager.get_status and activity_manager.get_status() or {}
+        task_str = labels.task(act_status.task)
+        if act_status.status and act_status.status ~= '' and act_status.task ~= 'idle' then
+            task_str = task_str .. ' (' .. tostring(act_status.status) .. ')'
+        end
+    else
+        local cur = task_manager.get_current_task()
+        task_str = labels.task(cur.name)
+        if cur.status ~= nil and cur.status ~= '' then
+            task_str = task_str .. ' (' .. tostring(cur.status) .. ')'
+        end
     end
 
     local msg = string.format(
@@ -260,13 +313,42 @@ local render_pulse = function ()
     -- Active War Plan summary (if any) -- driven from the cached snapshot.
     local wp = tracker.warplan and tracker.warplan.snapshot
     if wp and wp.active and wp.quest then
-        -- Header line: name, activity, macro progress
+        -- "Active: <activity label> [N/M]"  + "Next: <activity label>"
+        -- (no raw quest names; mapped via core/labels.lua)
         local progress_str = ''
         if wp.macro_progress then
             progress_str = string.format(' [%d/%d]', wp.macro_progress.cur, wp.macro_progress.max)
         end
-        local wp_msg = string.format('Active WarPlan: %s [%s]%s',
-            wp.quest.name, tostring(wp.activity), progress_str)
+        local wp_msg = string.format('Active: %s%s', labels.activity(wp.activity), progress_str)
+
+        -- "Next" -- the second WarPlan in the queue, if visible.
+        if wp.all_warplans and #wp.all_warplans > 1 then
+            -- Reuse warplan_state's classify by importing it here would
+            -- create a cycle; the second entry's name is enough for a
+            -- substring match against our activity labels.
+            local nxt_name = wp.all_warplans[2].name or ''
+            -- Use the same patterns as warplan_state.classify_activity
+            -- (subset; lookup is fine to inline here).
+            local nxt_tag = nil
+            local quick = {
+                { 'NightmareDungeon', 'nightmare' }, { 'Nightmare', 'nightmare' },
+                { 'Helltide', 'helltide' },          { 'Undercity', 'undercity' },
+                { 'Pit', 'pit' },                    { 'InfernalHorde', 'hordes' },
+                { 'Horde', 'hordes' },               { 'TurnIn', 'turnin' },
+                { 'Andariel', 'boss' },  { 'Duriel', 'boss' },  { 'Varshan', 'boss' },
+                { 'Grigoire', 'boss' },  { 'PenitentKnight', 'boss' },
+                { 'LordZir', 'boss' },   { 'VampireLord', 'boss' },
+                { 'BeastInIce', 'boss' },{ 'MegaDemon', 'boss' },
+                { 'Harbinger', 'boss' }, { 'Urivar', 'boss' },
+                { 'Belial', 'boss' },    { 'Butcher', 'boss' },
+            }
+            for _, row in ipairs(quick) do
+                if nxt_name:find(row[1], 1, true) then nxt_tag = row[2]; break end
+            end
+            if nxt_tag then
+                wp_msg = wp_msg .. '  |  Next: ' .. labels.activity(nxt_tag)
+            end
+        end
         graphics.text_2d(wp_msg, vec2:new(x, y + 24), 18, color_yellow(220))
 
         -- First non-"War Plan: N/M" objective text -- that's the actionable line

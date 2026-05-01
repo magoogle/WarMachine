@@ -74,4 +74,39 @@ mode.activity_for = function (m)
     return nil
 end
 
+-- Convenience predicates for tasks that need to gate on WarPlan vs
+-- standalone-mode behavior.  Many tasks previously inlined
+-- `core_settings.mode == core_mode.WARPLAN` -- centralize it.
+local _settings_lazy = nil
+local function get_settings()
+    -- Late-bound require to avoid a circular dep (core.settings -> core.mode).
+    if _settings_lazy == nil then
+        local ok, s = pcall(require, 'core.settings')
+        if ok then _settings_lazy = s else _settings_lazy = false end
+    end
+    return _settings_lazy or nil
+end
+
+mode.is_warplan = function ()
+    local s = get_settings()
+    return s and s.mode == mode.WARPLAN or false
+end
+
+mode.is_standalone = function ()
+    local s = get_settings()
+    if not s then return false end
+    return s.mode ~= mode.IDLE and s.mode ~= mode.WARPLAN
+end
+
+mode.is_idle = function ()
+    local s = get_settings()
+    return s and s.mode == mode.IDLE or false
+end
+
+-- True when settings.mode == the given mode constant.
+mode.is = function (m)
+    local s = get_settings()
+    return s and s.mode == m or false
+end
+
 return mode

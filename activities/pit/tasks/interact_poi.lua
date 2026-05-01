@@ -9,9 +9,25 @@
 -- ---------------------------------------------------------------------------
 
 local move         = require 'core.move'
+local zone         = require 'core.zone'
 local tracker      = require 'activities.pit.tracker'
 local settings     = require 'activities.pit.settings'
 local poi_priority = require 'activities.pit.poi_priority'
+
+-- Whitelisted POI kinds that this task is responsible for handling
+-- INSIDE pit floors.  Town-side POIs (`pit_obelisk`, `warplans_vendor`,
+-- `tyrael`, `npc`, `stash`, `waypoint`, etc.) are deliberately NOT in
+-- this list -- those are `enter_pit`'s job and would otherwise get
+-- picked here, walked to, fail live_actor_for's strict 8m check, and
+-- marked visited (user-reported "stale POI cleared looking for
+-- objective" while standing next to the Pit-key Crafter).
+local IN_PIT_POI_KINDS = {
+    chest                 = true,
+    chest_helltide_random = true,
+    shrine                = true,
+    objective             = true,
+    glyph_gizmo           = true,
+}
 
 local INTERACT_RADIUS = 3.0
 
@@ -36,11 +52,12 @@ end
 local task = { name = 'interact_poi', status = 'idle' }
 
 -- Keep this task OUT of the pit_exit / pit_floor_portal handling -- those
--- get their own task.  Filter the queue to non-portal POIs.
+-- get their own task.  Whitelist filter to only allowed in-pit POI kinds
+-- (chest / shrine / objective / glyph_gizmo).  Town POIs are skipped.
 local function next_target()
     local q = poi_priority.build(tracker, settings)
     for _, p in ipairs(q) do
-        if p.kind ~= 'pit_exit' and p.kind ~= 'pit_floor_portal' then
+        if IN_PIT_POI_KINDS[p.kind or ''] then
             return p
         end
     end
@@ -48,6 +65,10 @@ local function next_target()
 end
 
 task.shouldExecute = function ()
+    -- Only fire INSIDE pit floors.  In Skov_Temis (the hub) `enter_pit`
+    -- handles the Pit-key Crafter + portal flow; this task would just
+    -- pull town POIs and stand confused.
+    if not zone.in_pit() then return false end
     return next_target() ~= nil
 end
 

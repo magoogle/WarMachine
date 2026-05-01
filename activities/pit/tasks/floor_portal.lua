@@ -21,7 +21,18 @@ local task = { name = 'floor_portal', status = 'idle' }
 local PORTAL_SWITCH_SKIN = 'X1_TWR_ExitPortalSwitch'   -- pit_exit kind in actor_capture
 local FLOOR_PORTAL_PATTERN = 'Portal_Dungeon'           -- pit_floor_portal kind
 local INTERACT_RANGE = 3.0
-local BACK_PORTAL_RADIUS_SQ = 100   -- 10y squared
+-- Back-portal blacklist radius.  D4 spawns the player some yards
+-- AWAY from the destination portal after a teleport (live data: ~22y
+-- gap between spawn point and the back portal actor).
+local BACK_PORTAL_RADIUS_SQ = 625   -- 25y squared
+-- back_portal_pos auto-clears after this many seconds.  Without a
+-- timeout, if the bot accidentally bounces back to the same floor
+-- (e.g. clicked a portal that actually went backward), the floor's
+-- only forward portal stays permanently within the blacklist and the
+-- bot can't escape.  Per the user-reported "didn't go back down"
+-- after a back-up cycle.
+local BACK_PORTAL_TIMEOUT_S = 30
+local back_portal_set_t = nil
 
 local function get_world_id()
     local w = get_current_world()
@@ -39,6 +50,16 @@ end
 -- so the back-portal blacklist works.
 local function update_world_tracking()
     if not in_pit() then return end
+    -- Auto-clear an aged back_portal_pos so a single-portal floor
+    -- doesn't lock us out forever after an accidental cycle.  Cheap
+    -- check; safe to run every pulse.
+    if tracker.back_portal_pos and back_portal_set_t then
+        local now = get_time_since_inject() or 0
+        if (now - back_portal_set_t) >= BACK_PORTAL_TIMEOUT_S then
+            tracker.back_portal_pos = nil
+            back_portal_set_t = nil
+        end
+    end
     local wid = get_world_id()
     if not wid then return end
     if tracker.last_world_id == wid then return end
@@ -51,6 +72,7 @@ local function update_world_tracking()
             local pos = lp:get_position()
             if pos then
                 tracker.back_portal_pos = { x = pos:x(), y = pos:y() }
+                back_portal_set_t = now
                 if settings.debug_mode then
                     console.print(string.format(
                         '[Pit] floor change to wid=%s -- back-portal blacklisted near (%.1f,%.1f)',
@@ -59,8 +81,15 @@ local function update_world_tracking()
             end
         end
         tracker.current_floor = (tracker.current_floor or 1) + 1
-        -- Clear the visited dedup since we're on a new floor
-        tracker.visited = {}
+        -- DON'T clear tracker.visited on floor change.  It now contains
+        -- "portals we've already used" marks set by interact-time --
+        -- wiping it would re-allow seek_progression to pick the same
+        -- portal we just descended through (the catalog entry shares
+        -- coords across floors), causing the user-reported "stuck
+        -- going in and out of portals over and over" loop.
+        --
+        -- We DO still drop the priority cache so the next-floor queue
+        -- rebuilds against the current catalog state.
         tracker.poi_cache = nil
     else
         -- Initial entry, not portal-induced
@@ -141,6 +170,16 @@ task.Execute = function ()
         if d <= INTERACT_RANGE then
             tracker.portal_just_used = true
             tracker.portal_used_t = get_time_since_inject() or 0
+            -- Note: we do NOT mark this portal visited.  Each pit-floor
+            -- portal has TWO catalog entries (the floor-N side and the
+            -- floor-N+1 side) at different coords.  Marking one side
+            -- visited doesn't help because we'll see the other side
+            -- next floor; worse, when we re-visit floor N (e.g. after
+            -- bouncing back through the floor-N+1 back portal), the
+            -- floor-N portal we want to re-use is locked out -- the
+            -- "went down then back up then didn't go back down" stuck
+            -- the user reported.  Rely entirely on back_portal_pos
+            -- (now 25y radius) for cycle prevention.
             interact_object(portal)
             task.status = 'descending'
             return

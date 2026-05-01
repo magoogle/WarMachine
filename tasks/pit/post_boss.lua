@@ -92,15 +92,10 @@ task.Execute = function ()
         tracker.warplan.active_sub_plugin = nil
     end
 
-    -- Hard stop Batmobile so it doesn't keep wandering during the map+tp
-    -- sequence.  Falls back to pause() for older Batmobile builds.
-    if BatmobilePlugin then
-        if BatmobilePlugin.disable then
-            BatmobilePlugin.disable('warmachine')
-        elseif BatmobilePlugin.pause then
-            BatmobilePlugin.pause('warmachine')
-        end
-    end
+    -- Hard stop the internal walker so it doesn't keep walking during
+    -- the map+tp sequence.
+    local wok, walker = pcall(require, 'core.walker')
+    if wok and walker and walker.stop then walker.stop() end
 
     if not tracker.warplan.next_obj.pending then
         local s = tracker.warplan.next_obj

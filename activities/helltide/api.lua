@@ -19,6 +19,9 @@ local mount_manager = require 'core.mount_manager'
 local settings_mod  = require 'activities.helltide.settings'
 local tracker       = require 'activities.helltide.tracker'
 local runner        = require 'activities.helltide.tasks.runner'
+local quest_state   = require 'activities.helltide.quest_state'
+
+local core_mode = require 'core.mode'
 
 local M = {}
 
@@ -28,12 +31,20 @@ M.label = 'Helltide'
 M.is_loaded = function () return true end
 
 -- ---------------------------------------------------------------------------
--- shouldExecute -- run when:
---   * The player has the helltide buff (real run)
---   * OR helltide hour is active and we're recovering back to the zone
--- The buff check is in tasks/return_to_zone.lua's helpers; we keep this
--- top-level gate broad so the runner gets a chance to fire its recovery
--- task even when the buff is briefly absent.
+-- shouldExecute -- engages the helltide module in a few situations:
+--
+--   * Player has the helltide buff -- definitely inside the ring.
+--   * Helltide hour active AND we have a `last_in_zone_pos` -- the
+--     return_to_zone task drives us back when we wander off the edge.
+--   * WarPlan mode AND a Helltide WarPlan quest is active -- we may
+--     not have the buff yet (just TP'd in) but WarPlan is telling us
+--     to be here, so engage and let return_to_zone walk us into the ring.
+--   * Standalone HELLTIDE mode AND helltide hour active -- same idea:
+--     run the activity even before the buff lights up.
+--
+-- Without the WarPlan/standalone gates the activity wouldn't engage on
+-- a fresh TP into a helltide zone (no buff yet, no in-zone-pos yet),
+-- and the bot would just stand there.
 -- ---------------------------------------------------------------------------
 local function has_helltide_buff()
     local lp = get_local_player()
@@ -51,8 +62,20 @@ local function helltide_active_hour()
 end
 
 M.shouldExecute = function ()
-    return has_helltide_buff()
-        or (helltide_active_hour() and tracker.last_in_zone_pos ~= nil)
+    if has_helltide_buff() then return true end
+    if helltide_active_hour() and tracker.last_in_zone_pos ~= nil then return true end
+    -- WarPlan helltide objective is active -- engage even without the
+    -- buff so we can navigate into the ring.
+    if core_mode.is_warplan() then
+        local wp = quest_state.read()
+        if wp and wp.active then return true end
+    end
+    -- Standalone HELLTIDE mode during the active hour -- run forever
+    -- until time's up, opening as many chests as possible.
+    if core_mode.is(core_mode.HELLTIDE) and helltide_active_hour() then
+        return true
+    end
+    return false
 end
 
 -- ---------------------------------------------------------------------------
@@ -77,32 +100,35 @@ end
 
 M.get_status = function ()
     local cur = tracker.current_task or {}
-    return {
+    local out = {
         task   = cur.name or 'idle',
         status = cur.status,
         in_maiden = tracker.in_maiden,
         farm_target = tracker.farm_target and tracker.farm_target.skin or nil,
     }
+    -- Surface the live WarPlan helltide directive + N/M progress so the
+    -- overlay can render "Active: Helltide [tortured_gifts 1/2]" instead
+    -- of just the tag.
+    local ok, wp = pcall(quest_state.read)
+    if ok and wp and wp.active then
+        out.directive = wp.directive
+        out.progress  = wp.progress
+    end
+    return out
 end
 
 M.activate = function ()
     tracker.reset_run()
-    if BatmobilePlugin and BatmobilePlugin.resume then
-        -- Make sure Batmobile is unpaused so move.lua's tier-3 fallback
-        -- can drive us when StaticPather has no data.
-        pcall(BatmobilePlugin.resume, 'warmachine_helltide')
-    end
     if HelltideRevampedPlugin and HelltideRevampedPlugin.disable then
         pcall(HelltideRevampedPlugin.disable)
     end
 end
 
 M.deactivate = function ()
-    -- Clear any in-flight movement so we don't keep walking into a wall
-    -- after WarMachine moves to a different activity.
-    if BatmobilePlugin and BatmobilePlugin.clear_target then
-        pcall(BatmobilePlugin.clear_target, 'warmachine_helltide')
-    end
+    -- Clear any in-flight walker target so we don't keep walking into
+    -- a wall after WarMachine moves to a different activity.
+    local ok, walker = pcall(require, 'core.walker')
+    if ok and walker and walker.stop then walker.stop() end
     tracker.farm_target = nil
     tracker.in_maiden   = false
 end

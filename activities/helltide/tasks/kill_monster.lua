@@ -53,6 +53,13 @@ task.Execute = function ()
     if orbwalker and orbwalker.set_clear_toggle then
         orbwalker.set_clear_toggle(true)
     end
+    -- In-range short-circuit (see core/target.lua's IN_RANGE_DEFAULT).
+    local target_mod = require 'core.target'
+    if target_mod.distance_to(target) <= target_mod.IN_RANGE_DEFAULT then
+        move.clear()
+        task.status = 'in-range: ' .. tostring(target:get_skin_name() or '?')
+        return
+    end
     move.to_actor(target)
     task.status = 'engaging ' .. tostring(target:get_skin_name() or '?')
 end

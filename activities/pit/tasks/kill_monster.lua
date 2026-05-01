@@ -7,9 +7,10 @@
 -- cinematics finish before we engage.
 -- ---------------------------------------------------------------------------
 
-local move     = require 'core.move'
-local settings = require 'activities.pit.settings'
-local tracker  = require 'activities.pit.tracker'
+local move          = require 'core.move'
+local target_module = require 'core.target'
+local settings      = require 'activities.pit.settings'
+local tracker       = require 'activities.pit.tracker'
 
 -- Pit bosses: skin-name fragments that trigger the boss-seen latch.
 -- Conservative -- if a name doesn't match here, we still kill it via the
@@ -33,34 +34,10 @@ end
 
 local task = { name = 'kill_monster', status = 'idle' }
 
+-- Tiered selection: boss > elite/champion > everything else, closest
+-- within tier.  Shared with NMD / Undercity via core/target.lua.
 local function pick_target()
-    local lp = get_local_player()
-    if not lp then return nil end
-    local pp = get_player_position and get_player_position() or lp:get_position()
-    if not pp then return nil end
-    if not target_selector or not target_selector.get_near_target_list then return nil end
-    local enemies = target_selector.get_near_target_list(pp, settings.kill_range)
-    local boss, boss_d
-    local closest, closest_d
-    for _, e in pairs(enemies or {}) do
-        if e:get_current_health() and e:get_current_health() > 1 then
-            local ep = e:get_position()
-            if ep then
-                local dx = ep:x() - pp:x()
-                local dy = ep:y() - pp:y()
-                local d  = math.sqrt(dx*dx + dy*dy)
-                if d <= settings.kill_range then
-                    if e:is_boss() and (not boss_d or d < boss_d) then
-                        boss, boss_d = e, d
-                    end
-                    if not closest_d or d < closest_d then
-                        closest, closest_d = e, d
-                    end
-                end
-            end
-        end
-    end
-    return boss or closest
+    return target_module.pick({ range = settings.kill_range })
 end
 
 task.shouldExecute = function ()
@@ -69,12 +46,12 @@ task.shouldExecute = function ()
 end
 
 task.Execute = function ()
-    local target = pick_target()
-    if not target then task.status = 'idle'; return end
+    local enemy = pick_target()
+    if not enemy then task.status = 'idle'; return end
 
     -- Boss-seen latch + intro delay
-    local skin = target:get_skin_name() or ''
-    if (target:is_boss() or looks_like_boss(skin)) and not tracker.boss_seen then
+    local skin = enemy:get_skin_name() or ''
+    if (target_module.is_boss(enemy) or looks_like_boss(skin)) and not tracker.boss_seen then
         tracker.boss_seen = true
         if settings.debug_mode then
             console.print('[Pit] boss seen: ' .. tostring(skin))
@@ -91,7 +68,17 @@ task.Execute = function ()
     if orbwalker and orbwalker.set_clear_toggle then
         orbwalker.set_clear_toggle(true)
     end
-    move.to_actor(target)
+    -- If the enemy is already in attack range, DON'T pull the walker
+    -- toward it -- orbwalker auto-attacks from where we are, and any
+    -- prior walker target gets cleared so the host pathfinder isn't
+    -- still routing us to a stale destination 100y away.  This was the
+    -- user-visible "orbwalker point is WAYYY too far" symptom.
+    if target_module.distance_to(enemy) <= target_module.IN_RANGE_DEFAULT then
+        move.clear()
+        task.status = 'in-range: ' .. tostring(skin)
+        return
+    end
+    move.to_actor(enemy)
     task.status = 'engaging ' .. tostring(skin)
 end
 

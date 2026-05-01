@@ -16,7 +16,16 @@ local move     = require 'core.move'
 local tracker  = require 'activities.pit.tracker'
 local settings = require 'activities.pit.settings'
 
-local GLYPH_GIZMO_SKIN = 'Gizmo_Paragon_Glyph_Upgrade'
+-- The glyph-upgrade gizmo ships under several different skin names
+-- depending on which pit-floor / season / ProtoDun variant the player is
+-- on.  WarMapRecorder/core/actor_capture.lua already catalogues all three;
+-- mirror its pattern list here.  Substring match -- season-prefixed
+-- variants like `S09_Pit_Glyph_Foo` should still hit `Pit_Glyph`.
+local GLYPH_GIZMO_PATTERNS = {
+    'Gizmo_Paragon_Glyph_Upgrade',
+    'EGD_MSWK_GlyphUpgrade',
+    'Pit_Glyph',
+}
 
 local task = {
     name                  = 'upgrade_glyph',
@@ -37,7 +46,12 @@ local MAX_FAILED_BEFORE_BL  = 5
 local function find_gizmo()
     if not actors_manager then return nil end
     for _, a in pairs(actors_manager:get_ally_actors()) do
-        if a:get_skin_name() == GLYPH_GIZMO_SKIN then return a end
+        local sn = a.get_skin_name and a:get_skin_name() or nil
+        if sn then
+            for _, pat in ipairs(GLYPH_GIZMO_PATTERNS) do
+                if sn:find(pat, 1, true) then return a end
+            end
+        end
     end
     return nil
 end

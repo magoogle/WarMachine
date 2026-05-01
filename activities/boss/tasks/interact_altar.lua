@@ -24,10 +24,19 @@ local task = {
 local CLICK_COOLDOWN_S = 2.0
 local INTERACT_RANGE_M = 2.5
 
+-- IMPORTANT: filter on is_interactable().  D4 keeps the altar actor in
+-- the stream after being clicked -- it just becomes non-interactable.
+-- Without this filter, find_altar() keeps returning a valid actor after
+-- click and the bot walks back, tries to re-click (silently rejected),
+-- gets summon adds spawning around it, kill_monster pulls it away, the
+-- altar is "still there" so interact_altar reclaims the pulse, walks
+-- back, fails to click again -- forever.  See user-reported loop.
 local function find_altar()
     if not actors_manager or not actors_manager.get_all_actors then return nil end
     for _, a in pairs(actors_manager:get_all_actors()) do
-        if boss_data.is_altar(a) then return a end
+        if boss_data.is_altar(a) and a.is_interactable and a:is_interactable() then
+            return a
+        end
     end
     return nil
 end
@@ -40,6 +49,30 @@ local function any_chest_visible()
         end
     end
     return false
+end
+
+-- A boss-class actor in the actor stream means the altar successfully
+-- summoned -- second success signal alongside altar-becomes-non-
+-- interactable.  Catches cases where the altar's interactable flag
+-- doesn't flip cleanly (network jitter, multi-stage summons).
+local function any_boss_in_stream()
+    if not actors_manager or not actors_manager.get_all_actors then return false end
+    for _, a in pairs(actors_manager:get_all_actors()) do
+        if a.is_boss and a:is_boss() and a.is_dead and not a:is_dead() then
+            return true
+        end
+    end
+    return false
+end
+
+-- Helper: latch altar_activated and return false.  Used by every
+-- "we're past the altar phase" branch in shouldExecute.
+local function mark_activated()
+    if not tracker.altar_activated then
+        tracker.altar_activated  = true
+        tracker.altar_activate_t = get_time_since_inject() or 0
+        if settings.debug_mode then console.print('[Boss] altar phase complete') end
+    end
 end
 
 task.shouldExecute = function ()
@@ -66,11 +99,16 @@ task.shouldExecute = function ()
     end
     -- Already-spawned chest means the boss is dead from a previous run --
     -- jump past altar phase.
-    if any_chest_visible() then
-        tracker.altar_activated  = true
-        tracker.altar_activate_t = get_time_since_inject() or 0
-        return false
-    end
+    if any_chest_visible() then mark_activated(); return false end
+    -- Boss is alive in the room -> altar must have been clicked already.
+    if any_boss_in_stream() then mark_activated(); return false end
+    -- We clicked previously and the altar is no longer interactable
+    -- (despawned or consumed).  Without this latch we'd never observe
+    -- the success transition because Execute only runs while shouldExecute
+    -- returns true -- but find_altar() now filters on is_interactable
+    -- and returns nil post-click, so shouldExecute returns false and
+    -- the disappearance branch in Execute never fired.
+    if task.last_click_t and not find_altar() then mark_activated(); return false end
     return find_altar() ~= nil
 end
 

@@ -5,6 +5,7 @@
 -- masses are prioritized because killing them = currency + wave progress.
 
 local move        = require 'core.move'
+local rotation    = require 'core.rotation_bridge'
 local settings    = require 'activities.hordes.settings'
 local quest_state = require 'activities.hordes.quest_state'
 local tracker     = require 'activities.hordes.tracker'
@@ -92,6 +93,44 @@ local function is_soulspire(skin)
     return skin and skin:find('Soulspire', 1, true) ~= nil
 end
 
+-- Scan get_all_actors() for objective-skinned candidates (Soulspires,
+-- Aether Masses, BSK structures, BSK bosses, MarkerLocation_BSK_*, etc.)
+-- that target_selector.get_near_target_list omits because the host
+-- classifies them as structures/destructibles rather than enemies.
+-- Without this scan, the bot would only see "real" monsters in the 60y
+-- enemy stream and idle when the wave's progression-gating objects sit
+-- across the arena -- the user-reported "horde arena is one big room
+-- and we don't see events/spires/masses on the other side."
+local function scan_objective_actors(pp, range)
+    local out = {}
+    if not actors_manager or not actors_manager.get_all_actors then return out end
+    local r2 = range * range
+    for _, a in pairs(actors_manager:get_all_actors()) do
+        local sn = a.get_skin_name and a:get_skin_name() or nil
+        if sn then
+            local interesting = is_aether_mass(sn)
+                              or is_soulspire(sn)
+                              or is_objective_any(sn)
+                              or sn:find('BSK_', 1, true)   -- broad BSK_* catch
+            if interesting then
+                local p = a.get_position and a:get_position() or nil
+                if p then
+                    local dx = p:x() - pp:x()
+                    local dy = p:y() - pp:y()
+                    if dx*dx + dy*dy <= r2 then
+                        local hp   = a.get_current_health and a:get_current_health() or 0
+                        local dead = a.is_dead and a:is_dead() or false
+                        if hp > 1 and not dead then
+                            out[#out + 1] = a
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return out
+end
+
 local function pick_target()
     local lp = get_local_player()
     if not lp then return nil end
@@ -99,6 +138,22 @@ local function pick_target()
     if not pp then return nil end
     if not target_selector or not target_selector.get_near_target_list then return nil end
     local enemies = target_selector.get_near_target_list(pp, settings.kill_range)
+
+    -- Augment with structure-class objectives the enemy scan omits.
+    -- These are merged into the same tiered selection below; their
+    -- skin-based tiering (mass / spire / objective) is unchanged.
+    local extras = scan_objective_actors(pp, settings.kill_range)
+    if #extras > 0 then
+        enemies = enemies or {}
+        -- Dedup by actor identity -- same Lua-side actor object wouldn't
+        -- normally appear in both lists (target_selector excludes
+        -- structures), but be defensive for actors flagged as both.
+        local seen = {}
+        for _, e in pairs(enemies) do seen[e] = true end
+        for _, a in ipairs(extras) do
+            if not seen[a] then enemies[#enemies + 1] = a end
+        end
+    end
 
     -- Read the wave directive from quest objectives.  When the active
     -- objective says "Defeat 5 Soulspires" we want to ignore everything
@@ -108,14 +163,26 @@ local function pick_target()
 
     -- Tiered selection.  Walk all candidates once, classify into tiers,
     -- pick the closest from the highest non-empty tier.
-    --   tier 0: matches the active wave directive (dynamic, top priority)
-    --   tier 1: special-rank (boss/champion/elite) -- threat first
-    --   tier 2: aether masses (currency)
-    --   tier 3: scripted objectives (BSK_Miniboss, goblins, S05_*, markers)
+    --
+    -- OBJECTIVES BEFORE ELITES.  Per user direction: aether events
+    -- don't spawn until objectives are cleared, so even a 5y elite
+    -- waits while we knock down a 30y soulspire / mass / scripted
+    -- objective.  Elites tier sits below all the wave-progression
+    -- targets; bosses still top everything (true boss kills end the
+    -- run).
+    --
+    --   tier 1: matches the active wave directive (dynamic, top)
+    --   tier 2: BSK bosses (Bartuc / Council scripted boss kills)
+    --   tier 3: aether masses (currency + wave progress)
     --   tier 4: soulspires (gate wave clear)
-    --   tier 5: anything else
-    -- Tier 0 only fires when a directive is set AND the actor matches it.
-    local tiers = { {}, {}, {}, {}, {}, {} }
+    --   tier 5: scripted objectives (Miniboss / goblins / markers / S05_*)
+    --   tier 6: special-rank champions / elites
+    --   tier 7: anything else
+    --
+    -- BSK_*_boss skins go in tier 2 specifically; generic is_boss flag
+    -- without that skin family lands in tier 6 (some "boss"-flagged
+    -- actors are sub-objectives that aren't progression-critical).
+    local tiers = { {}, {}, {}, {}, {}, {}, {} }
     for _, e in pairs(enemies or {}) do
         local hp = e.get_current_health and e:get_current_health() or 0
         if hp > 1 then
@@ -130,15 +197,20 @@ local function pick_target()
                     local champ   = e.is_champion  and e:is_champion()  or false
                     local elite   = e.is_elite     and e:is_elite()     or false
                     local special = boss or champ or elite
+                    local is_bsk_boss = skin:find('BSK_', 1, true)
+                                    and (skin:find('_boss', 1, true)
+                                      or skin:find('Bartuc', 1, true)
+                                      or skin:find('Council', 1, true))
 
                     local tier
                     if actor_matches_directive(directive, skin, special) then
-                        tier = 1                      -- (1-indexed = tier 0 conceptually)
-                    elseif special                    then tier = 2
+                        tier = 1
+                    elseif is_bsk_boss                then tier = 2
                     elseif is_aether_mass(skin)       then tier = 3
-                    elseif is_objective_any(skin)     then tier = 4
-                    elseif is_soulspire(skin)         then tier = 5
-                    else                                   tier = 6 end
+                    elseif is_soulspire(skin)         then tier = 4
+                    elseif is_objective_any(skin)     then tier = 5
+                    elseif special                    then tier = 6
+                    else                                   tier = 7 end
 
                     local cur = tiers[tier]
                     if not cur.actor or d < cur.d then
@@ -149,7 +221,7 @@ local function pick_target()
         end
     end
 
-    for i = 1, 6 do
+    for i = 1, 7 do
         if tiers[i].actor then return tiers[i].actor end
     end
     return nil
@@ -162,9 +234,30 @@ end
 
 task.Execute = function ()
     local target = pick_target()
-    if not target then task.status = 'idle'; return end
+    if not target then
+        rotation.set_kill_target(nil)
+        task.status = 'idle'
+        return
+    end
+    -- Tell UniversalRotation which actor we're engaging.  UR reads
+    -- _G.WARMACHINE_TARGET in its spell loop and casts at it when valid,
+    -- which keeps the bot's facing aligned with our walk target.  Without
+    -- this, UR would spam the closest plain monster while WarMachine is
+    -- walking toward a 30y Soulspire and the bot would constantly turn
+    -- around mid-walk to face the closer target.
+    rotation.set_kill_target(target)
     if orbwalker and orbwalker.set_clear_toggle then
         orbwalker.set_clear_toggle(true)
+    end
+    -- In-range short-circuit (see core/target.lua's IN_RANGE_DEFAULT).
+    -- Hordes-specific note: spires need to be CLOSE for the bot's
+    -- AOE; same threshold works here since IN_RANGE_DEFAULT (8y) is
+    -- well within typical AOE radius.
+    local target_mod = require 'core.target'
+    if target_mod.distance_to(target) <= target_mod.IN_RANGE_DEFAULT then
+        move.clear()
+        task.status = 'in-range: ' .. tostring(target:get_skin_name())
+        return
     end
     move.to_actor(target)
     task.status = 'engaging ' .. tostring(target:get_skin_name())

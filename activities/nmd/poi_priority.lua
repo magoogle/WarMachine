@@ -6,6 +6,7 @@ local POI_REBUILD_INTERVAL_S = 1.5
 
 local TYPE_WEIGHT = {
     objective       = 1200,    -- gating interactables (pedestal, lever, door)
+    chest_horadric  =  900,    -- end-of-dungeon reward cache; rare and per-run
     chest           =  500,
     chest_helltide_random = 500,
     shrine          =  300,
@@ -23,22 +24,45 @@ local function dist2_player(poi)
     return dx*dx + dy*dy
 end
 
+-- Kinds that interact_poi has NO business handling (enemy actors are
+-- catalogued by the recorder for navigation hints, but they're
+-- kill_monster's job, not interact_poi's).  Without this filter, the
+-- queue ends up with champion/elite zombies as low-weight candidates;
+-- interact_poi walks to them, can't interact (they're not chests),
+-- waits the timeout, marks stale, repeats next pulse for hundreds of
+-- catalogued mobs.  Worse, while it's iterating these, kill_monster
+-- never gets a turn to actually engage them.
+local EXCLUDED_KINDS = {
+    champion          = true,
+    elite             = true,
+    boss              = true,
+    miniboss          = true,
+    -- Generic 'interactable' is too broad -- includes one-shot
+    -- consumables like Receptacle (after use).  We explicitly handle
+    -- known sub-kinds (chest_*, shrine, objective) above; anything
+    -- else gets default-weight which is fine, but we do NOT want
+    -- enemy actors leaking through under default-weight.
+}
+
 local function score_poi(poi, ctx)
+    local kind = poi.kind or ''
+    if EXCLUDED_KINDS[kind] then return nil end
+
     local key = string.format('%s:%d:%d',
-        poi.skin or poi.kind or '?',
+        poi.skin or kind or '?',
         math.floor(poi.x or 0),
         math.floor(poi.y or 0))
     if ctx.visited[key] then return nil end
 
-    if poi.kind == 'chest' or poi.kind == 'chest_helltide_random' then
+    if kind == 'chest' or kind == 'chest_helltide_random' or kind == 'chest_horadric' then
         if not ctx.settings.do_chests then return nil end
-    elseif poi.kind == 'shrine' then
+    elseif kind == 'shrine' then
         if not ctx.settings.do_shrines then return nil end
-    elseif poi.kind == 'objective' then
+    elseif kind == 'objective' then
         if not ctx.settings.do_objectives then return nil end
     end
 
-    local weight = TYPE_WEIGHT[poi.kind] or DEFAULT_WEIGHT
+    local weight = TYPE_WEIGHT[kind] or DEFAULT_WEIGHT
     local d2 = dist2_player(poi)
     local d  = math.sqrt(d2)
     return weight - (d * DISTANCE_COEFF), d

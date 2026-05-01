@@ -174,9 +174,26 @@ end
 -- ---------------------------------------------------------------------------
 -- Force a deactivate of the current activity.  Used when WarMachine itself
 -- gets disabled (main_toggle off) or when the user changes mode.
+--
+-- Also stops Batmobile freeroam for ALL warmachine_<tag> callers.  Each
+-- activity's freeroam_fallback task calls BatmobilePlugin.enable(caller)
+-- with its own caller string ('warmachine_nmd', 'warmachine_helltide',
+-- etc.).  Per-activity deactivate() only does clear_target(caller) which
+-- leaves Batmobile in "wandering, no goal" -- it'll just batmobile-rove
+-- forever after the user turned WarMachine off.  Sweep them all here.
 -- ---------------------------------------------------------------------------
 M.shutdown = function ()
     set_active(nil)
+    -- Hard-stop the internal walker so any in-flight path doesn't keep
+    -- driving the player after WarMachine flips off.  walker.stop also
+    -- clears the host pathfinder's stored path so the player goes idle
+    -- on the next pulse.
+    local wok, walker = pcall(require, 'core.walker')
+    if wok and walker and walker.stop then walker.stop() end
+    -- Clear cross-plugin signals so a stale travel flag doesn't outlive
+    -- WarMachine.  Cheap; safe to call when the bridge isn't loaded.
+    local rok, rb = pcall(require, 'core.rotation_bridge')
+    if rok and rb and rb.clear then rb.clear() end
 end
 
 return M

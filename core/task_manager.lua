@@ -34,6 +34,19 @@ end
 
 -- Priority order -- first task whose shouldExecute() returns true wins.
 local task_files = {
+    -- HIGHEST priority town tasks.  Alfred sits ABOVE this list (it
+    -- yields the entire pulse via alfred_bridge.update() in main.lua
+    -- before task_manager runs), so the user-spec "Alfred first,
+    -- whispers second, then proceed as normal" is preserved.
+    --
+    -- Whisper turn-in piggyback.  Opt-in via settings.warplan.whisper_turn_in.
+    -- Must run BEFORE the test_* trigger tasks because dispatch may
+    -- have set next_obj.pending on a prior pulse; without precedence
+    -- here, test_next_obj would TP us out before whispers can complete.
+    -- dispatch.lua's whispers_pending() yield prevents new pending
+    -- flags from being set while whispers are ready.
+    'warplan.whisper_turnin',
+
     -- Triggered click sequences (fire on tracker pending flags)
     'warplan.test_select',      -- vendor menu click sequence
     'warplan.test_next_obj',    -- Tab + click Next-Obj button

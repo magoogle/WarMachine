@@ -34,8 +34,7 @@ M.label = 'Boss'
 
 M.is_loaded = function () return true end
 
-local core_settings = require 'core.settings'
-local core_mode     = require 'core.mode'
+local core_mode = require 'core.mode'
 
 local function in_boss_zone()
     local w = get_current_world()
@@ -47,13 +46,13 @@ M.shouldExecute = function ()
     -- WarPlan path: only engage when WarPlan teleported us into a boss
     -- zone.  WarPlan dispatch handles transit; activity_manager only
     -- fires in-zone gameplay.
-    if core_settings.mode == core_mode.WARPLAN then
+    if core_mode.is_warplan() then
         return in_boss_zone()
     end
     -- Standalone Boss mode: also fire when the player has the activity
     -- selected but isn't in any boss zone yet -- select_boss takes the
     -- pulse and teleports.  Otherwise we'd never get out of Cerrigar.
-    if core_settings.mode == core_mode.BOSS then
+    if core_mode.is(core_mode.BOSS) then
         return true
     end
     -- Other standalone modes: don't engage
@@ -82,9 +81,6 @@ end
 
 M.activate = function ()
     tracker.reset_run()
-    if BatmobilePlugin and BatmobilePlugin.resume then
-        pcall(BatmobilePlugin.resume, 'warmachine_boss')
-    end
     -- Silence the legacy external Reaper plugin if it's still installed --
     -- otherwise its on_update would fight us for control.  No-op if not
     -- loaded (most users won't have ReaperPlugin globally registered).
@@ -94,9 +90,8 @@ M.activate = function ()
 end
 
 M.deactivate = function ()
-    if BatmobilePlugin and BatmobilePlugin.clear_target then
-        pcall(BatmobilePlugin.clear_target, 'warmachine_boss')
-    end
+    local ok, walker = pcall(require, 'core.walker')
+    if ok and walker and walker.stop then walker.stop() end
 end
 
 return M

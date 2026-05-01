@@ -7,21 +7,36 @@ local make_freeroam  = require 'core.freeroam'
 
 local R = {}
 
--- Order matters: highest priority first.
---   exit              -- terminal: chest looted or auto-reset triggered
+-- Pit is intentionally minimal: kill everything, descend, kill the boss,
+-- upgrade glyphs, leave.  Per user direction "PIT has no point of
+-- interest. Its simply go kill everything and progress until the boss
+-- spawns and is killed > then upgrade glyphs > leave".
+--
+-- Order (highest priority first):
+--   exit              -- terminal: chest looted / auto-reset triggered
 --   upgrade_glyph     -- post-boss glyph UI sequence (final floor only)
 --   floor_portal      -- descend via PortalSwitch / floor portal
---   interact_poi      -- chests, shrines, side objectives
---   kill_monster      -- combat (orbwalker handles auto-attack on the way too,
---                        so this only fires when no POI is in range)
+--   kill_monster      -- the main loop: clear the floor
 --   enter_pit         -- standalone: open the pit portal in town
 --   idle
+--
+-- Removed (no longer relevant for pit):
+--   interact_poi      -- pit has no side objectives / chests worth chasing
+--   interact_shrine   -- shrine buffs aren't worth the detour at pit pace
+-- The orphaned task files are left in place for git history but no
+-- longer loaded.  poi_priority.lua / visited tracker fields kept as
+-- well -- floor_portal still uses tracker.visited as a portal dedup
+-- map.
 local TASK_FILES = {
     'exit',
     'upgrade_glyph',
     'floor_portal',
-    'interact_poi',
     'kill_monster',
+    -- seek_progression: catalog-driven walk to the closest unvisited
+    -- floor-portal / exit-switch when no enemies are in range and
+    -- nothing's in actor stream to click.  Replaces the explorer's
+    -- random 1.5y wandering for mapped zones.
+    'seek_progression',
     'enter_pit',
     'idle',
 }

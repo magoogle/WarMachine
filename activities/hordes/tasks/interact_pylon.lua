@@ -12,12 +12,35 @@ local pylon_priority = require 'activities.hordes.data.pylon_priority'
 -- last_click_t debounces interact_object so the pulse loop (every 50ms) doesn't
 -- spam a click against the same pylon while D4 is opening the choice menu --
 -- HordeDev's legacy bot saw the same issue and uses a 3s gap between attempts.
-local task = { name = 'interact_pylon', status = 'idle', last_click_t = nil }
+local task = {
+    name = 'interact_pylon', status = 'idle',
+    last_click_t = nil,
+    -- Wall-clock the choice panel first appeared (= we first saw at
+    -- least one offered pylon).  Used by the timeout fallback that
+    -- picks ANY offered pylon when all three are blacklisted (so we
+    -- don't hang at the wave gate).
+    panel_seen_t = nil,
+}
 local CLICK_DEBOUNCE_S = 3
+
+-- Resolve the priority list + blacklist from the data file.  Supports
+-- both the new structured shape `{ priority = {...}, blacklist = {...} }`
+-- and the legacy flat list `{ 'A', 'B', ... }` so an outdated user copy
+-- of the data file keeps working.
+local PRIORITY = nil
+local BLACKLIST_SET = {}
+if type(pylon_priority) == 'table' and pylon_priority.priority then
+    PRIORITY = pylon_priority.priority
+    for _, name in ipairs(pylon_priority.blacklist or {}) do
+        BLACKLIST_SET[name] = true
+    end
+else
+    PRIORITY = pylon_priority   -- legacy flat list
+end
 
 -- Build a pylon name -> priority index map once.
 local PYLON_RANK = {}
-for i, name in ipairs(pylon_priority) do PYLON_RANK[name] = i end
+for i, name in ipairs(PRIORITY or {}) do PYLON_RANK[name] = i end
 
 local function find_pylons()
     -- A "pylon" actor has a skin containing one of the pylon names AND is
@@ -29,7 +52,12 @@ local function find_pylons()
             local sn = a:get_skin_name() or ''
             for name, _ in pairs(PYLON_RANK) do
                 if sn:find(name, 1, true) then
-                    out[#out + 1] = { actor = a, name = name, rank = PYLON_RANK[name] }
+                    out[#out + 1] = {
+                        actor       = a,
+                        name        = name,
+                        rank        = PYLON_RANK[name],
+                        blacklisted = BLACKLIST_SET[name] == true,
+                    }
                     break
                 end
             end
@@ -38,11 +66,18 @@ local function find_pylons()
     return out
 end
 
-local function pick_best(pylons)
+-- Pick the highest-priority NON-blacklisted pylon.  Fallback path:
+-- if every offered pylon is blacklisted AND the panel has been up
+-- for longer than `pylon_pick_timeout` seconds, pick the highest-
+-- priority blacklisted one anyway -- waiting forever causes the
+-- wave gate to time us out.  The timeout is computed in Execute.
+local function pick_best(pylons, allow_blacklist)
     if #pylons == 0 then return nil end
-    -- Lower rank = higher priority
     table.sort(pylons, function (a, b) return a.rank < b.rank end)
-    return pylons[1]
+    for _, p in ipairs(pylons) do
+        if allow_blacklist or not p.blacklisted then return p end
+    end
+    return nil
 end
 
 task.shouldExecute = function ()
@@ -64,8 +99,36 @@ task.Execute = function ()
     end
 
     local pylons = find_pylons()
-    local best = pick_best(pylons)
-    if not best then task.status = 'no pylons'; return end
+    if #pylons == 0 then
+        -- No panel up.  Reset panel_seen so the next panel gets a fresh
+        -- timeout window.
+        task.panel_seen_t = nil
+        task.status = 'no pylons'
+        return
+    end
+    -- Choice panel is up.  Track first-seen time for the all-blacklisted
+    -- timeout fallback below.
+    task.panel_seen_t = task.panel_seen_t or now
+    local elapsed     = now - task.panel_seen_t
+    local timeout     = settings.pylon_pick_timeout or 8
+    local fallback_ok = elapsed >= timeout
+
+    local best = pick_best(pylons, false)
+    if not best and fallback_ok then
+        -- All three offered are blacklisted and we've waited the timeout.
+        -- Take the highest-priority blacklisted one rather than miss the
+        -- pick entirely (D4 auto-selects after its own timer otherwise).
+        best = pick_best(pylons, true)
+        if best and settings.debug_mode then
+            console.print('[Hordes] all offered pylons blacklisted; ' ..
+                          'falling back to highest-priority: ' .. best.name)
+        end
+    end
+    if not best then
+        task.status = string.format('all offered blacklisted (%.1fs to fallback)',
+            math.max(0, timeout - elapsed))
+        return
+    end
 
     local pp = lp:get_position()
     local actor = best.actor

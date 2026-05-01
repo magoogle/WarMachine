@@ -35,11 +35,13 @@ local gui = {}
 --   * AlfredTheButler -- inventory/town management (optional)
 --   * Looteer       -- loot pickup (optional)
 -- Only Batmobile is hard-required (no fallback).  StaticPather is strongly
--- recommended; without it every zone falls back to Batmobile exploration.
+-- recommended.  Batmobile is GONE -- WarMachine internalized the
+-- locomotion logic in core/walker.lua + core/explorer.lua.  We no
+-- longer reference BatmobilePlugin at all.
 -- Alfred + Looteer are nice-to-haves; WarMachine still runs without them.
 -- ---------------------------------------------------------------------------
 local REQUIRED_PLUGINS = {
-    { folder = 'Batmobile', global = 'BatmobilePlugin' },
+    -- (none -- everything else is optional)
 }
 local OPTIONAL_PLUGINS = {
     -- WarPath (renamed from StaticPather).  We accept either folder name
@@ -149,6 +151,8 @@ gui.elements = {
     nmd_do_chests                  = cb(true, 'nmd_do_chests'),
     nmd_do_shrines                 = cb(true, 'nmd_do_shrines'),
     nmd_do_objectives              = cb(true, 'nmd_do_objectives'),
+    nmd_do_cursed_shrines          = cb(true, 'nmd_do_cursed_shrines'),
+    nmd_do_events                  = cb(true, 'nmd_do_events'),
     nmd_exit_after_boss            = cb(true, 'nmd_exit_after_boss'),
     nmd_kill_range                 = si(5,   60,   25, 'nmd_kill_range'),
     nmd_boss_intro_delay           = si(0,   30,    3, 'nmd_boss_intro_delay'),
@@ -163,11 +167,13 @@ gui.elements = {
     hordes_prefer_bartuc           = cb(false,'hordes_prefer_bartuc'),
     hordes_do_chests               = cb(true, 'hordes_do_chests'),
     hordes_do_chest_ga             = cb(true, 'hordes_do_chest_ga'),
-    hordes_do_chest_equipment      = cb(true, 'hordes_do_chest_equipment'),
-    hordes_do_chest_materials      = cb(false,'hordes_do_chest_materials'),
-    hordes_do_chest_gold           = cb(false,'hordes_do_chest_gold'),
-    -- Horde arena is large; 60 covers the full radius so we engage edges, not just center.
-    hordes_kill_range              = si(5,   120,   60, 'hordes_kill_range'),
+    -- Secondary chest dropdown: 0=None, 1=Materials, 2=Gold.  Materials
+    -- and Gold are mutually exclusive (you only have aether for one
+    -- after the GA chest), so a dropdown enforces the constraint.
+    hordes_chest_secondary         = co(0,    'hordes_chest_secondary'),
+    -- Horde arena is one big open room; 100 covers the full corner-to-
+    -- corner diagonal so spires/masses/events on the far side are seen.
+    hordes_kill_range              = si(5,   150,  100, 'hordes_kill_range'),
     hordes_pylon_pick_timeout      = si(2,   30,    8, 'hordes_pylon_pick_timeout'),
     hordes_auto_reset_after        = si(120,3000, 1500,'hordes_auto_reset_after'),
 
@@ -209,6 +215,22 @@ gui.elements = {
     -- (the original key shipped with default OFF, which left users staring
     -- at WarMachine doing nothing on enable).
     warplan_auto_cycle    = cb(true,  'warplan_auto_cycle_v2'),
+    -- Whispers turn-in piggyback.  Opt-in: walks to the Tree of Whispers
+    -- and claims the first reward when (a) we're in a recognized town,
+    -- (b) at least one bounty quest is turn-in-ready, (c) the Tree NPC
+    -- is in the live actor stream.  Default OFF until live-validated.
+    warplan_whisper_turn_in = cb(false, 'warplan_whisper_turn_in'),
+    -- Whispers reward UI is mouse-only (no API to pick a cache).  Two
+    -- click points expressed as %-of-screen so the same numbers work
+    -- across resolutions.  Reward = first cache (left of three);
+    -- Accept = the confirm button below the cards.  show_whisper_points
+    -- draws crosshairs at the configured spots so the user can dial
+    -- them in without consuming a turn-in.
+    warplan_whisper_reward_x_pct = si(0, 100, 40, 'warplan_whisper_reward_x_pct'),
+    warplan_whisper_reward_y_pct = si(0, 100, 55, 'warplan_whisper_reward_y_pct'),
+    warplan_whisper_accept_x_pct = si(0, 100, 50, 'warplan_whisper_accept_x_pct'),
+    warplan_whisper_accept_y_pct = si(0, 100, 85, 'warplan_whisper_accept_y_pct'),
+    warplan_show_whisper_points  = cb(false, 'warplan_show_whisper_points'),
 
     -- War Plan vendor menu click points
     warplan_cp_tree     = tree_node:new(1),
@@ -373,6 +395,22 @@ gui.render = function ()
             'Walk to Tyrael and interact when WarPlans_QST_TurnIn_Rewards is active.')
         gui.elements.warplan_auto_select:render('Auto select activities',
             'Run the click sequence when the WAR PLANS menu is open and no war plan is active.')
+        gui.elements.warplan_whisper_turn_in:render('Auto turn in Whispers',
+            'When in town, walk to Tree/Raven and claim first reward ' ..
+            'if any bounty is ready.  Piggyback only -- never teleports to ' ..
+            'the Tree on its own.  Click points below MUST be tuned to ' ..
+            'your resolution; enable "show whisper click points" to see them.')
+        gui.elements.warplan_whisper_reward_x_pct:render('Whisper reward click X%',
+            'X position of the first cache card as a percent of screen width.')
+        gui.elements.warplan_whisper_reward_y_pct:render('Whisper reward click Y%',
+            'Y position of the first cache card as a percent of screen height.')
+        gui.elements.warplan_whisper_accept_x_pct:render('Whisper accept click X%',
+            'X position of the Accept button as a percent of screen width.')
+        gui.elements.warplan_whisper_accept_y_pct:render('Whisper accept click Y%',
+            'Y position of the Accept button as a percent of screen height.')
+        gui.elements.warplan_show_whisper_points:render('Show whisper click points',
+            'Draw crosshairs at the configured Reward + Accept click points ' ..
+            'so you can verify they line up with the in-game UI.')
         gui.elements.warplan_auto_cycle:render('Auto-start war plan',
             'When no war plan is active and you are in Temis, walk to Warplans_Vendor ' ..
             'and open the menu. Covers the first start (fresh WarMachine enable) and ' ..
@@ -496,6 +534,15 @@ gui.render = function ()
         gui.elements.nmd_do_objectives:render('Do objectives', 'Pedestals, levers, doors gating progression')
         gui.elements.nmd_do_chests:render('Loot chests', 'Side-corridor + reward chests')
         gui.elements.nmd_do_shrines:render('Use shrines', 'Buff shrines on the way')
+        gui.elements.nmd_do_cursed_shrines:render('Do cursed shrines',
+            'Click cursed shrines to start the mob-wave sub-event ' ..
+            '(reward: CursedEventChest).  When off, the bot walks past ' ..
+            'cursed shrines without activating them.')
+        gui.elements.nmd_do_events:render('Do events',
+            'Engage local events: LE_Ambush (speak to survivor, survive ' ..
+            'waves), DE_* / DSQ_* (walk into trigger zone, kill mobs).  ' ..
+            'When off, the bot ignores event triggers and walks past ' ..
+            'them.  kill_monster still engages any mobs that aggro.')
         render_menu_header('Run lifecycle')
         gui.elements.nmd_exit_after_boss:render('Exit after boss', 'reset_all_dungeons after the boss kill')
         gui.elements.nmd_auto_reset_after:render('Auto-reset after (s)', 'Safety net')
@@ -509,7 +556,9 @@ gui.render = function ()
         render_menu_header('Pylons + aether')
         gui.elements.hordes_do_pylons:render('Pick pylons (boons)',
             'Auto-pick the highest-priority pylon between waves. ' ..
-            'Priority list is in activities/hordes/data/pylon_priority.lua.')
+            'Edit activities/hordes/data/pylon_priority.lua to reorder ' ..
+            '(top = strongest preference) or to blacklist boons you ' ..
+            'never want picked.  Reloads on Lua reload, no plugin restart.')
         gui.elements.hordes_pylon_pick_timeout:render('Pylon pick timeout (s)',
             'If no preferred pylon detected within this time, take the first available')
         gui.elements.hordes_do_aether_structures:render('Engage aether structures',
@@ -522,13 +571,15 @@ gui.render = function ()
         gui.elements.hordes_do_chests:render('Open reward chests',
             'Master toggle.  Off -> skip the chest phase entirely.')
         gui.elements.hordes_do_chest_ga:render('  GA chest',
-            'Greater-Affix chest.  Highest priority -- bot tries this one first.')
-        gui.elements.hordes_do_chest_equipment:render('  Equipment chest',
-            'Random gear pieces.  Second priority.')
-        gui.elements.hordes_do_chest_materials:render('  Materials chest',
-            'Crafting materials.  Third priority.  Off by default.')
-        gui.elements.hordes_do_chest_gold:render('  Gold chest',
-            'Pile of gold.  Lowest priority.  Off by default.')
+            'Greater-Affix chest.  Top priority -- bot tries it first ' ..
+            'with retry-until-success.  If aether runs out the chest ' ..
+            'is marked failed and we fall through to the secondary.')
+        local CHEST_SECONDARY_OPTS = { 'None', 'Materials', 'Gold' }
+        gui.elements.hordes_chest_secondary:render('  Secondary chest',
+            CHEST_SECONDARY_OPTS,
+            'Materials or Gold (mutually exclusive -- only enough aether ' ..
+            'for one after the GA chest).  Picked AFTER the GA attempt ' ..
+            'resolves.  None = no secondary chest.')
         render_menu_header('Run lifecycle')
         gui.elements.hordes_auto_reset_after:render('Auto-reset after (s)', 'Safety net')
         gui.elements.hordes_tree:pop()

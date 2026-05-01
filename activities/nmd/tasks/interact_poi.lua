@@ -25,9 +25,33 @@ local function live_actor_for(poi)
     return best
 end
 
-local task = { name = 'interact_poi', status = 'idle' }
+local zone = require 'core.zone'
+
+-- How long to wait on a "found but not interactable yet" POI before
+-- declaring it stale.  Some POIs (boss-room reward chest) become
+-- interactable later in the run; others (consumed Receptacle, used
+-- shrine) NEVER become interactable again.  We wait this long, then
+-- stale-mark either way -- if the POI was supposed to become
+-- interactable later, we'll re-encounter it on a future pulse after
+-- visited-dedup expiration (or it'll become a fresh POI when the
+-- catalog entry's coordinates change).
+local WAIT_INTERACTABLE_TIMEOUT_S = 6.0
+
+local task = {
+    name             = 'interact_poi',
+    status           = 'idle',
+    -- Tracks (target_key, first_seen_t) for "waiting on interactable"
+    -- timeout. Reset when the picked target changes.
+    waiting_key      = nil,
+    waiting_first_t  = nil,
+}
 
 task.shouldExecute = function ()
+    -- POI scoring uses StaticPatherPlugin.get_actors() which returns the
+    -- current zone's catalog.  In town that'd be town objectives /
+    -- chests / shrines, none of which we want to interact with from
+    -- the NMD activity.  Restrict to DGN_*.
+    if not zone.in_dungeon() then return false end
     return #poi_priority.build(tracker, settings) > 0
 end
 
@@ -68,9 +92,35 @@ task.Execute = function ()
         if orbwalker and orbwalker.set_clear_toggle then orbwalker.set_clear_toggle(false) end
         interact_object(actor)
         tracker.mark_visited(target)
+        task.waiting_key     = nil
+        task.waiting_first_t = nil
         task.status = 'interacted: ' .. target.kind
     else
-        task.status = 'POI not interactable yet'
+        -- Found but not interactable yet.  Track how long we've been
+        -- waiting; if the POI never becomes interactable (consumed
+        -- Receptacle, used shrine, etc.) we stale-mark it after the
+        -- timeout so the runner can move on.  Without this, a single
+        -- consumed receptacle would block all subsequent tasks
+        -- (kill_monster never gets a turn).
+        local now = get_time_since_inject() or 0
+        local key = string.format('%s:%d:%d',
+            target.skin or target.kind or '?',
+            math.floor(target.x or 0),
+            math.floor(target.y or 0))
+        if task.waiting_key ~= key then
+            task.waiting_key     = key
+            task.waiting_first_t = now
+        end
+        local elapsed = now - (task.waiting_first_t or now)
+        if elapsed >= WAIT_INTERACTABLE_TIMEOUT_S then
+            tracker.mark_visited(target)
+            task.waiting_key     = nil
+            task.waiting_first_t = nil
+            task.status = 'stale (never became interactable): ' .. target.kind
+        else
+            task.status = string.format('waiting interactable (%.1fs): %s',
+                WAIT_INTERACTABLE_TIMEOUT_S - elapsed, target.kind)
+        end
     end
 end
 

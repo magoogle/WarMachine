@@ -52,9 +52,6 @@ end
 
 M.activate = function ()
     tracker.reset_run()
-    if BatmobilePlugin and BatmobilePlugin.resume then
-        pcall(BatmobilePlugin.resume, 'warmachine_undercity')
-    end
     -- Silence legacy external plugins so they don't fight us
     if WonderCityPlugin and WonderCityPlugin.disable then
         pcall(WonderCityPlugin.disable)
@@ -65,9 +62,8 @@ M.activate = function ()
 end
 
 M.deactivate = function ()
-    if BatmobilePlugin and BatmobilePlugin.clear_target then
-        pcall(BatmobilePlugin.clear_target, 'warmachine_undercity')
-    end
+    local ok, walker = pcall(require, 'core.walker')
+    if ok and walker and walker.stop then walker.stop() end
 end
 
 return M

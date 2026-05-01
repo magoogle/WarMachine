@@ -75,6 +75,17 @@ local tracker = {
         turn_in_cooldown_until     = 0,
         start_cycle_cooldown_until = 0,
         select_cooldown_until      = 0,
+
+        -- Helltide TP retry guard.  Helltide periods aren't continuous --
+        -- there's a ~5-min gap roughly hourly when no helltide is active
+        -- in any region, and during those gaps `teleport_to_waypoint` to
+        -- a helltide region either silently fails or returns us to a
+        -- safe zone.  When dispatch detects a failed helltide TP (we're
+        -- not in a helltide overworld zone N seconds after firing), it
+        -- bumps this to now+300 to suspend re-tries while another
+        -- helltide spins up.
+        helltide_tp_attempt_at     = nil,    -- t when we last fired Next-Obj for helltide
+        helltide_tp_cooldown_until = 0,
     },
 
     -- Undercity Obelisk entry (from Temis with active UC warplan).

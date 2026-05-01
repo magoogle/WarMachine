@@ -66,9 +66,6 @@ end
 
 M.activate = function ()
     tracker.reset_run()
-    if BatmobilePlugin and BatmobilePlugin.resume then
-        pcall(BatmobilePlugin.resume, 'warmachine_pit')
-    end
     -- Silence the legacy external plugin if it's still installed -- otherwise
     -- ArkhamAsylum's own on_update hook keeps trying to run pit gameplay
     -- alongside us, both bots fighting for control.  No-op if not loaded.
@@ -78,9 +75,8 @@ M.activate = function ()
 end
 
 M.deactivate = function ()
-    if BatmobilePlugin and BatmobilePlugin.clear_target then
-        pcall(BatmobilePlugin.clear_target, 'warmachine_pit')
-    end
+    local ok, walker = pcall(require, 'core.walker')
+    if ok and walker and walker.stop then walker.stop() end
 end
 
 return M

@@ -9,10 +9,11 @@
 -- orbs unconditionally because they block all damage to nearby enemies.
 -- Mirrored here.
 
-local move      = require 'core.move'
-local settings  = require 'activities.boss.settings'
-local tracker   = require 'activities.boss.tracker'
-local boss_data = require 'activities.boss.data.boss_data'
+local move          = require 'core.move'
+local target_module = require 'core.target'
+local settings      = require 'activities.boss.settings'
+local tracker       = require 'activities.boss.tracker'
+local boss_data     = require 'activities.boss.data.boss_data'
 
 local task = { name = 'kill_monster', status = 'idle' }
 
@@ -35,32 +36,10 @@ local function any_chest_visible()
     return false
 end
 
+-- Tiered selection: boss > elite/champion > everything else, closest
+-- within tier.  Shared with NMD / Pit / Undercity via core/target.lua.
 local function pick_enemy()
-    if not target_selector or not target_selector.get_near_target_list then return nil end
-    local lp = get_local_player()
-    if not lp then return nil end
-    local pp = lp:get_position()
-    if not pp then return nil end
-    local enemies = target_selector.get_near_target_list(pp, settings.kill_range)
-    local boss, boss_d, closest, closest_d
-    for _, e in pairs(enemies or {}) do
-        local hp = e.get_current_health and e:get_current_health() or 0
-        if hp > 1 then
-            local ep = e:get_position()
-            if ep then
-                local d = math.sqrt((ep:x()-pp:x())^2 + (ep:y()-pp:y())^2)
-                if d <= settings.kill_range then
-                    if e.is_boss and e:is_boss() and (not boss_d or d < boss_d) then
-                        boss, boss_d = e, d
-                    end
-                    if not closest_d or d < closest_d then
-                        closest, closest_d = e, d
-                    end
-                end
-            end
-        end
-    end
-    return boss or closest
+    return target_module.pick({ range = settings.kill_range })
 end
 
 task.shouldExecute = function ()
@@ -85,6 +64,12 @@ task.Execute = function ()
 
     local target = pick_enemy()
     if not target then task.status = 'idle'; return end
+    -- In-range short-circuit -- see core/target.lua's IN_RANGE_DEFAULT.
+    if target_module.distance_to(target) <= target_module.IN_RANGE_DEFAULT then
+        move.clear()
+        task.status = 'in-range: ' .. tostring(target.get_skin_name and target:get_skin_name() or '?')
+        return
+    end
     move.to_actor(target)
     task.status = 'engaging ' .. tostring(target.get_skin_name and target:get_skin_name() or '?')
 end

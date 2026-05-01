@@ -20,15 +20,10 @@ local settings  = require 'activities.boss.settings'
 local tracker   = require 'activities.boss.tracker'
 local boss_data = require 'activities.boss.data.boss_data'
 
-local core_settings = require 'core.settings'
-local core_mode     = require 'core.mode'
+local core_mode = require 'core.mode'
 
 local task = { name = 'select_boss', status = 'idle' }
 local TELEPORT_COOLDOWN_S = 12   -- prevents spam if zone-load lags
-
-local function is_warplan_mode()
-    return core_settings.mode == core_mode.WARPLAN
-end
 
 -- Picks the next boss id given the user's selection_mode + enable flags.
 -- Returns boss_id or nil if no enabled bosses.
@@ -70,7 +65,7 @@ end
 
 task.shouldExecute = function ()
     -- Only fires in standalone Boss mode.  WarPlan handles transit.
-    if is_warplan_mode() then return false end
+    if core_mode.is_warplan() then return false end
 
     -- Don't try to teleport if no host API
     if not teleport_to_boss_dungeon then return false end
