@@ -88,6 +88,7 @@ local function attempt_upgrade()
     local glyphs = get_glyphs and get_glyphs() or nil
     if not glyphs or glyphs:size() == 0 then
         tracker.glyph_done = true
+    tracker.glyph_done_t = tracker.glyph_done_t or (get_time_since_inject() or 0)
         task.status = 'no glyphs to upgrade'
         return
     end
@@ -121,6 +122,7 @@ local function attempt_upgrade()
     end
     -- Nothing upgradable left
     tracker.glyph_done = true
+    tracker.glyph_done_t = tracker.glyph_done_t or (get_time_since_inject() or 0)
     task.status = 'idle'
 end
 

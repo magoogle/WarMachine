@@ -22,7 +22,9 @@ local M = {
     -- Run pacing
     auto_reset_after = 600,   -- safety net (s); reset_all_dungeons + tp home if stuck
     altar_stuck_secs = 60,    -- how long to wait after altar click before recovery
-    chest_grace_secs = 4,     -- grace after chest open before declaring run_done
+    chest_grace_secs = 15,    -- grace after chest open before declaring run_done.
+                              -- Universal end-of-run loot grace (was 4s);
+                              -- see core/exit_grace.lua for the rationale.
 
     -- Boss selection (standalone mode only -- WarPlan picks the boss for us).
     -- selection_mode:
@@ -60,7 +62,7 @@ M.update = function ()
     M.do_chests        = bget('boss_do_chests',        true)
     M.auto_reset_after = bget('boss_auto_reset_after', 600)
     M.altar_stuck_secs = bget('boss_altar_stuck_secs', 60)
-    M.chest_grace_secs = bget('boss_chest_grace_secs', 4)
+    M.chest_grace_secs = bget('boss_chest_grace_secs', 15)
     -- combo_box returns 0-indexed slots.  selection_mode:
     --   0 = Specific, 1 = Random, 2 = Split.  Add 1 so M.selection_mode
     --   matches the 1-based settings semantic above.

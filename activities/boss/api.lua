@@ -42,24 +42,46 @@ local function in_boss_zone()
     return boss_data.zone_matches(w:get_current_zone_name())
 end
 
+-- One-time diagnostics. Set TRUE on first call; the trace prints fire
+-- only on the first call so we don't spam the console mid-run. Used to
+-- diagnose "boss is dispatched but runner never pulses" cases.
+local _se_diagnosed   = false
+local _pulse_diagnosed = false
+
 M.shouldExecute = function ()
+    local result
     -- WarPlan path: only engage when WarPlan teleported us into a boss
     -- zone.  WarPlan dispatch handles transit; activity_manager only
     -- fires in-zone gameplay.
     if core_mode.is_warplan() then
-        return in_boss_zone()
-    end
+        result = in_boss_zone()
     -- Standalone Boss mode: also fire when the player has the activity
     -- selected but isn't in any boss zone yet -- select_boss takes the
     -- pulse and teleports.  Otherwise we'd never get out of Cerrigar.
-    if core_mode.is(core_mode.BOSS) then
-        return true
+    elseif core_mode.is(core_mode.BOSS) then
+        result = true
+    else
+        -- Other standalone modes: don't engage
+        result = in_boss_zone()
     end
-    -- Other standalone modes: don't engage
-    return in_boss_zone()
+    if not _se_diagnosed then
+        _se_diagnosed = true
+        local cs = require 'core.settings'
+        console.print(string.format(
+            '[Boss/diag] shouldExecute first-call: result=%s settings.mode=%s is_warplan=%s is_BOSS=%s in_boss_zone=%s',
+            tostring(result), tostring(cs.mode),
+            tostring(core_mode.is_warplan()),
+            tostring(core_mode.is(core_mode.BOSS)),
+            tostring(in_boss_zone())))
+    end
+    return result
 end
 
 M.pulse = function ()
+    if not _pulse_diagnosed then
+        _pulse_diagnosed = true
+        console.print('[Boss/diag] pulse first-call reached')
+    end
     settings_mod.update()
     -- Mounting disabled in boss rooms: tight space + constant combat.
     -- Helltide is the only activity exposing the mount option.

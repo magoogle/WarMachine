@@ -1,26 +1,35 @@
 -- ---------------------------------------------------------------------------
 -- activities/pit/tasks/interact_poi.lua
 --
--- Walk to + click the highest-priority POI in the queue.  POIs in pit are
--- mostly chests, shrines, and side objectives -- pit_exit/pit_floor_portal
--- are HIGHER priority and live in tasks/floor_portal.lua, so they get
--- handled there.  This task fills the "killing time on the floor while
--- exploring" role.
+-- Walk to + click the highest-priority POI in the queue.  POIs in pit
+-- are mostly chests, shrines, side objectives, glyph gizmos --
+-- pit_exit and pit_floor_portal live in tasks/floor_portal.lua and
+-- get higher priority than this task.  This file fills the
+-- "killing time on the floor while exploring" role.
+--
+-- Shared primitives (see core/poi_pick.lua, core/live_actor.lua):
+--   * Reachability-filtered queue picker -- skip catalog entries the
+--     host pathfinder can't currently route to (chest in a sealed-off
+--     room, etc.).  Was the user-reported "wall-walking toward an
+--     unreachable chest" symptom.
+--   * Live-actor matcher -- catalog skin -> in-stream actor.
+--
+-- Pit-specific behavior layered on top:
+--   * Whitelist filter (IN_PIT_POI_KINDS) -- skip town POIs that
+--     showed up in the catalog scan but belong to enter_pit.
 -- ---------------------------------------------------------------------------
 
-local move         = require 'core.move'
-local zone         = require 'core.zone'
-local tracker      = require 'activities.pit.tracker'
-local settings     = require 'activities.pit.settings'
+local move        = require 'core.move'
+local zone        = require 'core.zone'
+local poi_pick    = require 'core.poi_pick'
+local live_actor  = require 'core.live_actor'
+local tracker     = require 'activities.pit.tracker'
+local settings    = require 'activities.pit.settings'
 local poi_priority = require 'activities.pit.poi_priority'
 
--- Whitelisted POI kinds that this task is responsible for handling
--- INSIDE pit floors.  Town-side POIs (`pit_obelisk`, `warplans_vendor`,
--- `tyrael`, `npc`, `stash`, `waypoint`, etc.) are deliberately NOT in
--- this list -- those are `enter_pit`'s job and would otherwise get
--- picked here, walked to, fail live_actor_for's strict 8m check, and
--- marked visited (user-reported "stale POI cleared looking for
--- objective" while standing next to the Pit-key Crafter).
+-- Whitelisted POI kinds for in-pit handling.  Town POIs (Pit-key
+-- Crafter, Warplans Vendor, etc.) are deliberately excluded so this
+-- task doesn't fight enter_pit / pit_obelisk over the same target.
 local IN_PIT_POI_KINDS = {
     chest                 = true,
     chest_helltide_random = true,
@@ -31,45 +40,18 @@ local IN_PIT_POI_KINDS = {
 
 local INTERACT_RADIUS = 3.0
 
-local function live_actor_for(poi)
-    if not actors_manager or not actors_manager.get_ally_actors then return nil end
-    local best, best_d = nil, math.huge
-    for _, a in pairs(actors_manager:get_ally_actors()) do
-        local sn = a:get_skin_name()
-        if sn == poi.skin then
-            local p = a:get_position()
-            if p then
-                local dx = p:x() - (poi.x or 0)
-                local dy = p:y() - (poi.y or 0)
-                local d2 = dx*dx + dy*dy
-                if d2 < 64 and d2 < best_d then best, best_d = a, d2 end
-            end
-        end
-    end
-    return best
-end
+local picker = poi_pick.make_picker({
+    budget        = 4,
+    short_stale_s = 6.0,
+})
 
 local task = { name = 'interact_poi', status = 'idle' }
 
--- Keep this task OUT of the pit_exit / pit_floor_portal handling -- those
--- get their own task.  Whitelist filter to only allowed in-pit POI kinds
--- (chest / shrine / objective / glyph_gizmo).  Town POIs are skipped.
-local function next_target()
-    local q = poi_priority.build(tracker, settings)
-    for _, p in ipairs(q) do
-        if IN_PIT_POI_KINDS[p.kind or ''] then
-            return p
-        end
-    end
-    return nil
-end
-
 task.shouldExecute = function ()
-    -- Only fire INSIDE pit floors.  In Skov_Temis (the hub) `enter_pit`
-    -- handles the Pit-key Crafter + portal flow; this task would just
-    -- pull town POIs and stand confused.
     if not zone.in_pit() then return false end
-    return next_target() ~= nil
+    -- Cheap pre-check (no reach test); reach filter happens in Execute.
+    local q = poi_priority.build(tracker, settings)
+    return picker.pick(q, { kind_filter = IN_PIT_POI_KINDS }) ~= nil
 end
 
 task.Execute = function ()
@@ -78,15 +60,22 @@ task.Execute = function ()
     local pp = lp:get_position()
     if not pp then return end
 
-    local target = next_target()
-    if not target then task.status = 'no targets'; return end
+    local q = poi_priority.build(tracker, settings)
+    local target = picker.pick(q, {
+        kind_filter = IN_PIT_POI_KINDS,
+        player_pos  = pp,
+    })
+    if not target then
+        task.status = 'no reachable POI (exploring)'
+        return
+    end
 
     local dx = target.x - pp:x()
     local dy = target.y - pp:y()
     local d  = math.sqrt(dx*dx + dy*dy)
 
     if d > INTERACT_RADIUS then
-        local actor = live_actor_for(target)
+        local actor = live_actor.find(target)
         if actor then
             move.to_actor(actor)
             task.status = string.format('walking to %s (%.0fm)', target.kind, d)
@@ -98,7 +87,7 @@ task.Execute = function ()
         return
     end
 
-    local actor = live_actor_for(target)
+    local actor = live_actor.find(target)
     if not actor then
         tracker.mark_visited(target)
         task.status = 'stale POI cleared'

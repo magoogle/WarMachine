@@ -184,7 +184,7 @@ gui.elements = {
     boss_kill_range                = si(5,   60,   25, 'boss_kill_range'),
     boss_room_tether               = si(5,   30,   15, 'boss_room_tether'),
     boss_altar_stuck_secs          = si(15, 120,   60, 'boss_altar_stuck_secs'),
-    boss_chest_grace_secs          = si(0,  15,    4, 'boss_chest_grace_secs'),
+    boss_chest_grace_secs          = si(0,  60,   15, 'boss_chest_grace_secs'),
     boss_auto_reset_after          = si(60,1800,  600,'boss_auto_reset_after'),
     -- Boss selection (standalone mode only -- WarPlan picks for us).
     boss_selection_mode            = co(0,        'boss_selection_mode'),  -- Specific / Random / Split
@@ -241,32 +241,54 @@ gui.elements = {
     -- in the menu), so we only expose ONE Y slider per row -- 15 X +
     -- 5 row-Y = 20 sliders instead of 30.  Cuts setup time roughly in
     -- half.  Row Y defaults match the original per-slot defaults.
-    warplan_cp_row1_y = si(0, 2160, 360, 'warplan_cp_row1_y'),
-    warplan_cp_row2_y = si(0, 2160, 510, 'warplan_cp_row2_y'),
-    warplan_cp_row3_y = si(0, 2160, 660, 'warplan_cp_row3_y'),
-    warplan_cp_row4_y = si(0, 2160, 810, 'warplan_cp_row4_y'),
-    warplan_cp_row5_y = si(0, 2160, 960, 'warplan_cp_row5_y'),
+    -- Row Y defaults from a calibrated 1080p layout (operator-supplied).
+    -- Stride is ~180px row-to-row; first row at y=360.  These land
+    -- correctly on the WAR PLANS vendor menu out of the box; users on
+    -- non-1080p resolutions still need to retune via "Show points".
+    warplan_cp_row1_y = si(0, 2160,  360, 'warplan_cp_row1_y'),
+    warplan_cp_row2_y = si(0, 2160,  547, 'warplan_cp_row2_y'),
+    warplan_cp_row3_y = si(0, 2160,  735, 'warplan_cp_row3_y'),
+    warplan_cp_row4_y = si(0, 2160,  914, 'warplan_cp_row4_y'),
+    warplan_cp_row5_y = si(0, 2160, 1094, 'warplan_cp_row5_y'),
 
     -- Per-slot X (unchanged -- columns can drift independently)
-    warplan_cp_s1_x  = si(0, 3840, 320, 'warplan_cp_s1_x'),
-    warplan_cp_s2_x  = si(0, 3840, 470, 'warplan_cp_s2_x'),
-    warplan_cp_s3_x  = si(0, 3840, 620, 'warplan_cp_s3_x'),
-    warplan_cp_s4_x  = si(0, 3840, 320, 'warplan_cp_s4_x'),
-    warplan_cp_s5_x  = si(0, 3840, 470, 'warplan_cp_s5_x'),
-    warplan_cp_s6_x  = si(0, 3840, 620, 'warplan_cp_s6_x'),
-    warplan_cp_s7_x  = si(0, 3840, 320, 'warplan_cp_s7_x'),
-    warplan_cp_s8_x  = si(0, 3840, 470, 'warplan_cp_s8_x'),
-    warplan_cp_s9_x  = si(0, 3840, 620, 'warplan_cp_s9_x'),
-    warplan_cp_s10_x = si(0, 3840, 320, 'warplan_cp_s10_x'),
-    warplan_cp_s11_x = si(0, 3840, 470, 'warplan_cp_s11_x'),
-    warplan_cp_s12_x = si(0, 3840, 620, 'warplan_cp_s12_x'),
-    warplan_cp_s13_x = si(0, 3840, 320, 'warplan_cp_s13_x'),
-    warplan_cp_s14_x = si(0, 3840, 470, 'warplan_cp_s14_x'),
-    warplan_cp_s15_x = si(0, 3840, 620, 'warplan_cp_s15_x'),
+    -- Column X defaults from a calibrated 1080p layout (operator-
+    -- supplied).  Same five X values repeat across all 5 rows because
+    -- the vendor cards form a regular grid:
+    --   Col 1 = 167, Col 2 = 319, Col 3 = 471, Col 4 = 623, Col 5 = 775
+    -- Stride 152px between columns.  Hand-tuned -- Row 1 Col 2 sits
+    -- at 319 like everyone else in production; the screenshot showed
+    -- 318 mid-drag.
+    warplan_cp_s1_x  = si(0, 3840, 167, 'warplan_cp_s1_x'),
+    warplan_cp_s2_x  = si(0, 3840, 319, 'warplan_cp_s2_x'),
+    warplan_cp_s3_x  = si(0, 3840, 471, 'warplan_cp_s3_x'),
+    warplan_cp_s4_x  = si(0, 3840, 623, 'warplan_cp_s4_x'),
+    warplan_cp_s5_x  = si(0, 3840, 775, 'warplan_cp_s5_x'),
+    warplan_cp_s6_x  = si(0, 3840, 167, 'warplan_cp_s6_x'),
+    warplan_cp_s7_x  = si(0, 3840, 319, 'warplan_cp_s7_x'),
+    warplan_cp_s8_x  = si(0, 3840, 471, 'warplan_cp_s8_x'),
+    warplan_cp_s9_x  = si(0, 3840, 623, 'warplan_cp_s9_x'),
+    warplan_cp_s10_x = si(0, 3840, 775, 'warplan_cp_s10_x'),
+    warplan_cp_s11_x = si(0, 3840, 167, 'warplan_cp_s11_x'),
+    warplan_cp_s12_x = si(0, 3840, 319, 'warplan_cp_s12_x'),
+    warplan_cp_s13_x = si(0, 3840, 471, 'warplan_cp_s13_x'),
+    warplan_cp_s14_x = si(0, 3840, 623, 'warplan_cp_s14_x'),
+    warplan_cp_s15_x = si(0, 3840, 775, 'warplan_cp_s15_x'),
+    warplan_cp_s16_x = si(0, 3840, 167, 'warplan_cp_s16_x'),
+    warplan_cp_s17_x = si(0, 3840, 319, 'warplan_cp_s17_x'),
+    warplan_cp_s18_x = si(0, 3840, 471, 'warplan_cp_s18_x'),
+    warplan_cp_s19_x = si(0, 3840, 623, 'warplan_cp_s19_x'),
+    warplan_cp_s20_x = si(0, 3840, 775, 'warplan_cp_s20_x'),
+    warplan_cp_s21_x = si(0, 3840, 167, 'warplan_cp_s21_x'),
+    warplan_cp_s22_x = si(0, 3840, 319, 'warplan_cp_s22_x'),
+    warplan_cp_s23_x = si(0, 3840, 471, 'warplan_cp_s23_x'),
+    warplan_cp_s24_x = si(0, 3840, 623, 'warplan_cp_s24_x'),
+    warplan_cp_s25_x = si(0, 3840, 775, 'warplan_cp_s25_x'),
 
     -- Top-row UI buttons
-    warplan_cp_start_x   = si(0, 3840, 1500, 'warplan_cp_start_x'),
-    warplan_cp_start_y   = si(0, 2160, 1000, 'warplan_cp_start_y'),
+    -- START button defaults from the same calibrated 1080p layout.
+    warplan_cp_start_x   = si(0, 3840,  668, 'warplan_cp_start_x'),
+    warplan_cp_start_y   = si(0, 2160, 1282, 'warplan_cp_start_y'),
     warplan_cp_confirm_x = si(0, 3840, 0,    'warplan_cp_confirm_x'),
     warplan_cp_confirm_y = si(0, 2160, 0,    'warplan_cp_confirm_y'),
 
@@ -422,28 +444,40 @@ gui.render = function ()
         render_menu_header('Open the War Plans vendor window. Toggle "Show points" to see crosshairs, then drag sliders to align them with each activity slot, START, Confirm popup, and the map Next-Obj button.')
         gui.elements.warplan_show_points:render('Show points', 'Render crosshairs at each click point')
 
-        render_menu_header('5x3 grid covering the WAR PLANS menu. Three slots in each row share a single Y slider -- in-game the cards in a row sit at the same screen height, so independent Y per slot was just busywork. Drag each row Y once, then nudge each L/M/R X.')
-        local function row(prefix, color_label, ey, e1x, e2x, e3x)
-            ey :render(prefix .. ' Y',   'Screen Y for the entire ' .. prefix .. ' (' .. color_label .. ')')
-            e1x:render(prefix .. ' L X', 'Screen X for ' .. prefix .. ' left')
-            e2x:render(prefix .. ' M X', 'Screen X for ' .. prefix .. ' middle')
-            e3x:render(prefix .. ' R X', 'Screen X for ' .. prefix .. ' right')
+        render_menu_header('5x5 grid covering the WAR PLANS menu. Five slots in each row share a single Y slider -- in-game the cards in a row sit at the same screen height, so independent Y per slot was just busywork. Drag each row Y once, then nudge each column X (cols 1-5 left to right).')
+        local function row(prefix, color_label, ey, e1x, e2x, e3x, e4x, e5x)
+            ey :render(prefix .. ' Y',     'Screen Y for the entire ' .. prefix .. ' (' .. color_label .. ')')
+            e1x:render(prefix .. ' Col1 X', 'Screen X for ' .. prefix .. ' column 1 (leftmost)')
+            e2x:render(prefix .. ' Col2 X', 'Screen X for ' .. prefix .. ' column 2')
+            e3x:render(prefix .. ' Col3 X', 'Screen X for ' .. prefix .. ' column 3 (middle)')
+            e4x:render(prefix .. ' Col4 X', 'Screen X for ' .. prefix .. ' column 4')
+            e5x:render(prefix .. ' Col5 X', 'Screen X for ' .. prefix .. ' column 5 (rightmost)')
         end
         row('Row 1', 'red',
             gui.elements.warplan_cp_row1_y,
-            gui.elements.warplan_cp_s1_x, gui.elements.warplan_cp_s2_x, gui.elements.warplan_cp_s3_x)
+            gui.elements.warplan_cp_s1_x,  gui.elements.warplan_cp_s2_x,
+            gui.elements.warplan_cp_s3_x,  gui.elements.warplan_cp_s4_x,
+            gui.elements.warplan_cp_s5_x)
         row('Row 2', 'green',
             gui.elements.warplan_cp_row2_y,
-            gui.elements.warplan_cp_s4_x, gui.elements.warplan_cp_s5_x, gui.elements.warplan_cp_s6_x)
+            gui.elements.warplan_cp_s6_x,  gui.elements.warplan_cp_s7_x,
+            gui.elements.warplan_cp_s8_x,  gui.elements.warplan_cp_s9_x,
+            gui.elements.warplan_cp_s10_x)
         row('Row 3', 'yellow',
             gui.elements.warplan_cp_row3_y,
-            gui.elements.warplan_cp_s7_x, gui.elements.warplan_cp_s8_x, gui.elements.warplan_cp_s9_x)
+            gui.elements.warplan_cp_s11_x, gui.elements.warplan_cp_s12_x,
+            gui.elements.warplan_cp_s13_x, gui.elements.warplan_cp_s14_x,
+            gui.elements.warplan_cp_s15_x)
         row('Row 4', 'cyan',
             gui.elements.warplan_cp_row4_y,
-            gui.elements.warplan_cp_s10_x, gui.elements.warplan_cp_s11_x, gui.elements.warplan_cp_s12_x)
+            gui.elements.warplan_cp_s16_x, gui.elements.warplan_cp_s17_x,
+            gui.elements.warplan_cp_s18_x, gui.elements.warplan_cp_s19_x,
+            gui.elements.warplan_cp_s20_x)
         row('Row 5', 'orange',
             gui.elements.warplan_cp_row5_y,
-            gui.elements.warplan_cp_s13_x, gui.elements.warplan_cp_s14_x, gui.elements.warplan_cp_s15_x)
+            gui.elements.warplan_cp_s21_x, gui.elements.warplan_cp_s22_x,
+            gui.elements.warplan_cp_s23_x, gui.elements.warplan_cp_s24_x,
+            gui.elements.warplan_cp_s25_x)
         gui.elements.warplan_cp_start_x:render('START X', 'Screen X for the START button')
         gui.elements.warplan_cp_start_y:render('START Y', 'Screen Y for the START button')
 

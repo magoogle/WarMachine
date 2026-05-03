@@ -16,11 +16,12 @@
 -- when the runtime decorates the skin with `_01_Dyn` or season prefixes.
 -- ---------------------------------------------------------------------------
 
-local move     = require 'core.move'
-local find     = require 'core.find'
-local zone     = require 'core.zone'
-local tracker  = require 'activities.undercity.tracker'
-local settings = require 'activities.undercity.settings'
+local move          = require 'core.move'
+local find          = require 'core.find'
+local zone          = require 'core.zone'
+local entry_portal  = require 'core.entry_portal'
+local tracker       = require 'activities.undercity.tracker'
+local settings      = require 'activities.undercity.settings'
 
 local task = {
     name = 'floor_portal', status = 'idle',
@@ -57,11 +58,20 @@ local function find_switch()
     -- Don't filter on is_interactable here -- D4 sometimes flips that
     -- flag false when far from the switch, then true on close approach.
     -- The Execute path calls is_interactable + retries on cooldown.
+    --
+    -- Entry-portal exclusion: skip portal switches sitting at our
+    -- spawn-in position.  After descending, the back-portal switch
+    -- streams in next to us with the same skin as the FORWARD switch
+    -- on this floor; without the filter the bot would re-click it
+    -- and bounce up a floor.  See core/entry_portal.lua.
     return find.closest({
         patterns             = PORTAL_PATTERNS,
         require_interactable = false,
         source               = 'all',
         visited              = nil,
+        filter               = function (a)
+            return not entry_portal.is_actor_near_entry(a)
+        end,
     })
 end
 

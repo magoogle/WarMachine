@@ -195,15 +195,21 @@ local main_pulse = function ()
     end
 end
 
--- Slot colors are grouped per row (3 cells per row, 5 rows total) so the
+-- Slot colors are grouped per row (5 cells per row, 5 rows total) so the
 -- user can read the grid visually: red=R1, green=R2, yellow=R3, cyan=R4,
--- orange=R5. Labels "1".."15" disambiguate which cell within a row.
+-- orange=R5. Labels "1".."25" disambiguate which cell within a row.
+-- Slot index = (row - 1) * 5 + column.
 local cp_colors = {
     [1]  = color_red(220),    [2]  = color_red(220),    [3]  = color_red(220),
-    [4]  = color_green(220),  [5]  = color_green(220),  [6]  = color_green(220),
-    [7]  = color_yellow(220), [8]  = color_yellow(220), [9]  = color_yellow(220),
-    [10] = color_cyan(220),   [11] = color_cyan(220),   [12] = color_cyan(220),
-    [13] = color_orange(220), [14] = color_orange(220), [15] = color_orange(220),
+    [4]  = color_red(220),    [5]  = color_red(220),
+    [6]  = color_green(220),  [7]  = color_green(220),  [8]  = color_green(220),
+    [9]  = color_green(220),  [10] = color_green(220),
+    [11] = color_yellow(220), [12] = color_yellow(220), [13] = color_yellow(220),
+    [14] = color_yellow(220), [15] = color_yellow(220),
+    [16] = color_cyan(220),   [17] = color_cyan(220),   [18] = color_cyan(220),
+    [19] = color_cyan(220),   [20] = color_cyan(220),
+    [21] = color_orange(220), [22] = color_orange(220), [23] = color_orange(220),
+    [24] = color_orange(220), [25] = color_orange(220),
     start          = color_white(255),
     confirm        = color_silver(255),
     next_objective = color_purple(220),

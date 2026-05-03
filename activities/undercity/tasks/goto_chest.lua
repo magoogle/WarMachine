@@ -33,7 +33,10 @@ task.Execute = function ()
         if chest.is_interactable and chest:is_interactable() then
             interact_object(chest)
         end
-        tracker.chest_looted = true
+        if not tracker.chest_looted then
+            tracker.chest_looted   = true
+            tracker.chest_looted_t = get_time_since_inject() or 0
+        end
         task.status = 'opened chest'
         return
     end

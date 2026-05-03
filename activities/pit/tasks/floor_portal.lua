@@ -12,19 +12,22 @@
 -- exclude any portal within 10y of it.  Cleared on the next world change.
 -- ---------------------------------------------------------------------------
 
-local move     = require 'core.move'
-local tracker  = require 'activities.pit.tracker'
-local settings = require 'activities.pit.settings'
+local move          = require 'core.move'
+local entry_portal  = require 'core.entry_portal'
+local tracker       = require 'activities.pit.tracker'
+local settings      = require 'activities.pit.settings'
 
 local task = { name = 'floor_portal', status = 'idle' }
 
 local PORTAL_SWITCH_SKIN = 'X1_TWR_ExitPortalSwitch'   -- pit_exit kind in actor_capture
 local FLOOR_PORTAL_PATTERN = 'Portal_Dungeon'           -- pit_floor_portal kind
 local INTERACT_RANGE = 3.0
--- Back-portal blacklist radius.  D4 spawns the player some yards
--- AWAY from the destination portal after a teleport (live data: ~22y
--- gap between spawn point and the back portal actor).
-local BACK_PORTAL_RADIUS_SQ = 625   -- 25y squared
+-- Back-portal blacklist radius.  Live data correction (2026-05):
+-- pit floor descents work like NMD/Undercity entries -- D4 spawns
+-- the player LITERALLY ON TOP of the destination back-portal,
+-- not 22y away (the previous comment was wrong).  Matches the
+-- core/entry_portal.lua default of 5y.
+local BACK_PORTAL_RADIUS_SQ = 25    -- 5y squared
 -- back_portal_pos auto-clears after this many seconds.  Without a
 -- timeout, if the bot accidentally bounces back to the same floor
 -- (e.g. clicked a portal that actually went backward), the floor's
@@ -127,7 +130,18 @@ local function find_floor_portal()
            and not sn:find('Light_NoShadows', 1, true)
            and a.is_interactable and a:is_interactable()
         then
-            -- Back-portal blacklist
+            -- Two layers of back-portal exclusion:
+            --   1) Pit-specific tracker.back_portal_pos -- snapshot
+            --      taken on world_id transition (i.e. floor descent),
+            --      uses BACK_PORTAL_RADIUS_SQ (5y).  Predates
+            --      core/entry_portal and stays as the activity-
+            --      specific source of truth for pit's per-descent
+            --      bookkeeping (latched only after a portal_just_used
+            --      event, stricter than entry_portal's any-zone-change).
+            --   2) core/entry_portal.is_actor_near_entry -- cross-
+            --      activity backstop in case (1) hasn't been set yet
+            --      (e.g. a brand-new pit run where the world_id hop
+            --      hasn't fired).  Same 5y default radius.
             local skip = false
             if tracker.back_portal_pos then
                 local p = a:get_position()
@@ -138,6 +152,9 @@ local function find_floor_portal()
                         skip = true
                     end
                 end
+            end
+            if not skip and entry_portal.is_actor_near_entry(a) then
+                skip = true
             end
             if not skip then return a end
         end

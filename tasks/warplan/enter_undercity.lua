@@ -35,6 +35,20 @@ local OBELISK_RETRY_S     = 2.0
 local OPEN_PORTAL_RETRY_S = 1.5     -- click Open Portal every N seconds
 local ENTER_DELAY_S       = 0.50    -- send Enter this long after each Open Portal click
 local TOTAL_TIMEOUT_S     = 30.0
+-- Post-teleport settle delay.
+--
+-- The dispatch task uses Next-Obj to map-teleport the player right onto
+-- the Undercity Obelisk in Temis.  D4's teleport arrival has a short
+-- non-interactive window (loading-fade + position-stabilize + actor
+-- stream re-populate), and if we fire interact_object during that
+-- window the host re-routes the click-to-walk -- the bot looks like
+-- it "runs away then runs back" before clicking.
+--
+-- Wait this many seconds AFTER we first claim the pulse before firing
+-- the first obelisk interact.  Subsequent retries use the normal
+-- OBELISK_RETRY_S interval.  Tune up if the visible "run away" still
+-- happens; tune down if entry feels sluggish.
+local POST_TELEPORT_SETTLE_S = 1.5
 
 local VK_RETURN = 0x0D
 
@@ -135,6 +149,20 @@ task.Execute = function ()
             TOTAL_TIMEOUT_S))
         reset_pending(state)
         task.status = nil
+        return
+    end
+
+    -- Post-teleport settle.  Hold off on interact_object until D4's
+    -- arrival fade + stream re-population is done -- without this, the
+    -- bot fires the click during the non-interactive window and the
+    -- host re-routes the click-to-walk, producing the visible
+    -- "teleport, run away, run back, then activate" loop the user
+    -- reported.  Status updates so the GUI shows we're intentionally
+    -- waiting (not idling).
+    if state.first_attempt_at
+       and (now - state.first_attempt_at) < POST_TELEPORT_SETTLE_S then
+        task.status = string.format('settling after teleport (%.1fs)',
+            POST_TELEPORT_SETTLE_S - (now - state.first_attempt_at))
         return
     end
 

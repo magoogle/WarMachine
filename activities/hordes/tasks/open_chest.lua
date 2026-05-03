@@ -209,6 +209,12 @@ local function update_phase_done(chests)
     if any_remaining_attempts(chests) then return end
     if not tracker.chest_phase_done then
         tracker.chest_phase_done = true
+        -- Stamp completion time so exit.lua can hold the universal
+        -- loot-grace window (core.exit_grace.MIN_GRACE_S) before
+        -- declaring run_done + tearing down the dungeon.  Was instant
+        -- before this change -- the user reported "Hordes exited
+        -- instantly after kill, no time to loot."
+        tracker.chest_phase_done_t = get_time_since_inject() or 0
         if settings.debug_mode then
             console.print(string.format(
                 '[Hordes] chest phase done (opened=%d, failed=%d)',

@@ -32,6 +32,88 @@ local find     = require 'core.find'
 local settings = require 'activities.undercity.settings'
 local tracker  = require 'activities.undercity.tracker'
 
+-- Module-level "known consumed" map.  When Execute walks the player
+-- into close range of an enticement and observes is_interactable=false
+-- there, the actor was either consumed (most likely) or it's a
+-- broken / mis-classified prop.  Either way, we shouldn't walk to it
+-- again -- caching the key here lets find_enticement filter it out
+-- BEFORE picking it as a target on the next pulse.  (tracker.visited
+-- is checked inside find.closest, so we layer onto that without
+-- mutating it directly -- visited is consumer-shared and filling it
+-- with non-confirmed entries would pollute interact_poi's view.)
+--
+-- Cleared on zone change via tracker.zone_changed callback (see below).
+local _confirmed_consumed = {}
+
+-- D4 streams enticements as non-interactable when the player is far
+-- away.  We can only safely declare "consumed" once we've been close
+-- enough that the flag should have flipped to true if it were going
+-- to.  CONFIRMED_RANGE_M is the radius inside which a non-interactable
+-- enticement is treated as consumed.  Picked at 8y because the click
+-- threshold (INTERACT_RANGE) is 3y -- by 8y the bot has been visibly
+-- "approaching" for several seconds and D4 has had every chance to
+-- flip the flag.
+local CONFIRMED_RANGE_M = 8.0
+
+-- Combat-yield range.  When any hostile is within this range,
+-- shouldExecute returns false so kill_monster (lower priority) gets
+-- the pulse.  Fixes the "walks to enticement, mobs spawn, bot never
+-- stops to fight" symptom -- previously interact_enticement just
+-- ran straight to the next enticement while mobs chewed the bot.
+local COMBAT_YIELD_RANGE_M = 15.0
+
+-- Post-consume anchor.  After clicking an enticement and the actor
+-- flips to non-interactable, we set ANCHOR = the enticement's
+-- position and HOLD here until no hostile is within
+-- ANCHOR_CLEAR_RANGE_M of the anchor.  Two reasons:
+--
+--   1) Enticement clicks spawn mob waves AT the enticement.  If the
+--      bot wanders off to the next-closest enticement before the
+--      wave is dead, we leave a contested area behind us full of
+--      hostiles that gradually chase + chew the bot.
+--   2) The user-spec'd flow: "once no mobs are within 8-10 yards of
+--      that enticement, we can move on and consider that specific
+--      one done."  Cleared-the-room semantics, not cleared-around-me.
+--
+-- Anchor expires after ANCHOR_MAX_HOLD_S as a safety net so a stuck
+-- mob (off-mesh, behind a wall) can't trap us forever.
+local _post_consume_anchor = nil   -- { x, y, set_t }
+local ANCHOR_CLEAR_RANGE_M = 10.0
+local ANCHOR_MAX_HOLD_S    = 30.0
+
+-- Returns true if any hostile is within `radius` of (ax, ay).  Uses
+-- the host's near-target list -- same primitive UR + kill_monster use.
+local function any_enemy_near_anchor(ax, ay, radius)
+    if not target_selector or not target_selector.get_near_target_list then
+        return false
+    end
+    -- get_near_target_list takes the player position; pass a vec3
+    -- centered on the anchor (the host doesn't care that it isn't
+    -- actually the player's position for the search call).
+    local probe = vec3:new(ax, ay, 0)
+    if utility and utility.set_height_of_valid_position then
+        local ok, snapped = pcall(utility.set_height_of_valid_position, probe)
+        if ok and snapped then probe = snapped end
+    end
+    local enemies = nil
+    pcall(function () enemies = target_selector.get_near_target_list(probe, radius) end)
+    if not enemies or #enemies == 0 then return false end
+    -- Some hosts return EVERY actor as a stub even when out of range;
+    -- recompute distance to be sure.  Cheap on small lists.
+    local r2 = radius * radius
+    for _, e in pairs(enemies) do
+        local hp = e.get_current_health and e:get_current_health() or 0
+        if hp > 1 then
+            local p = e.get_position and e:get_position() or nil
+            if p then
+                local dx, dy = p:x() - ax, p:y() - ay
+                if (dx*dx + dy*dy) <= r2 then return true end
+            end
+        end
+    end
+    return false
+end
+
 local task = {
     name           = 'interact_enticement',
     status         = 'idle',
@@ -82,28 +164,52 @@ local function hearth_cap_reached()
 end
 
 -- Find the closest enticement we haven't interacted with yet.
--- Crucially: NO is_interactable filter -- the actor flips that flag
--- only on close approach, so filtering hides candidates we should be
--- walking toward.  The interactable check happens in Execute.
+-- Crucially: NO is_interactable filter at the find layer -- the
+-- actor flips that flag only on close approach, so filtering on it
+-- in find would hide candidates we should be walking toward.  The
+-- interactable check happens in Execute.
+--
+-- BUT we DO filter:
+--   * Actors marked in tracker.visited (consumed earlier this run)
+--   * Actors marked in _confirmed_consumed (we got close, saw the
+--     flag false, treated as consumed -- prevents walking to dead
+--     enticements still in stream)
+--   * Hearths past the cap
 local function find_enticement()
     return find.closest({
         patterns             = ENTICEMENT_PATTERNS,
         require_interactable = false,
         source               = 'all',   -- switches/destructibles live in get_all_actors
-        -- No max_dist_sq: enticements are room-scale objectives and the
-        -- actor stream bounds the search naturally.  WonderCity's
-        -- comment: "Anything in actor stream is fair game."
         visited              = tracker.visited,
         visited_prefix       = 'enticement',
-        filter               = function (a)
+        filter               = function (a, p)
+            -- Skip "we already learned this one is consumed" -- bot got
+            -- close, observed is_interactable=false, treats as done.
+            local key = find.key_for('enticement', a, p)
+            if _confirmed_consumed[key] then return false end
+
             -- Honor hearth cap; beacons are uncapped.
             local sn = a.get_skin_name and a:get_skin_name() or ''
             if is_hearth_skin(sn) and hearth_cap_reached() then
                 return false
             end
+
+            -- Belt-and-braces: some destructible-style props expose
+            -- is_dead on consumption.  When available, trust it.
+            if a.is_dead then
+                local ok, dead = pcall(function () return a:is_dead() end)
+                if ok and dead then return false end
+            end
             return true
         end,
     })
+end
+
+-- Public hook: clear the consumed map when the player changes zones,
+-- since on a fresh enter every enticement is potentially fresh again.
+-- runner / tracker can call this if they wire it up; harmless if not.
+local function _reset_consumed_for_zone()
+    _confirmed_consumed = {}
 end
 
 task.shouldExecute = function ()
@@ -111,6 +217,42 @@ task.shouldExecute = function ()
     if settings.do_enticements == false then return false end
     if tracker.boss_seen then return false end       -- focus boss once visible
     if settings.speed_run == true and hearth_cap_reached() then return false end
+
+    -- POST-CONSUME ANCHOR.  After clicking an enticement, hold here
+    -- (don't pick a new target) until the spawned mob wave is dead.
+    -- "Dead" = no hostile within ANCHOR_CLEAR_RANGE_M of the anchor
+    -- position.  Anchor expires after ANCHOR_MAX_HOLD_S so a stuck /
+    -- off-mesh mob can't pin us forever.
+    if _post_consume_anchor then
+        local now = get_time_since_inject() or 0
+        if (now - _post_consume_anchor.set_t) > ANCHOR_MAX_HOLD_S then
+            if settings.debug_mode then
+                console.print('[Undercity] anchor timed out, releasing')
+            end
+            _post_consume_anchor = nil
+        elseif any_enemy_near_anchor(
+                  _post_consume_anchor.x, _post_consume_anchor.y,
+                  ANCHOR_CLEAR_RANGE_M) then
+            -- Yield to kill_monster (lower priority) so it engages the
+            -- mobs near the anchor.  We'll reclaim once they're dead.
+            return false
+        else
+            -- Mobs cleared near anchor.  Release it; the next claim
+            -- below will pick the next-closest enticement.
+            _post_consume_anchor = nil
+        end
+    end
+
+    -- COMBAT YIELD.  Clicking an enticement spawns a mob wave; if we
+    -- don't stop to fight them they shred us while we walk to the next
+    -- enticement (the user-reported "walks to enticement but doesn't
+    -- stay to fight" symptom).  Yield to kill_monster (lower runner
+    -- priority) whenever a hostile is within COMBAT_YIELD_RANGE_M --
+    -- it claims the pulse, fights, and when the wave is dead its
+    -- shouldExecute returns false again, letting interact_enticement
+    -- reclaim and walk to the next target.
+    if find.any_enemy_in_range(COMBAT_YIELD_RANGE_M) then return false end
+
     return find_enticement() ~= nil
 end
 
@@ -172,6 +314,33 @@ task.Execute = function ()
     -- Walk phase: too far, move toward the actor via core.move (which
     -- now drives the internal walker -- no more direct Batmobile calls).
     if d > INTERACT_RANGE then
+        -- Early-confirm-consumed check.  By CONFIRMED_RANGE_M (8y) the
+        -- bot has been "approaching" long enough for D4 to flip
+        -- is_interactable=true if the actor were available.  If it's
+        -- still false at that range, treat as consumed and don't waste
+        -- the rest of the walk.  Skips the actor for the rest of the
+        -- session via _confirmed_consumed (find_enticement also checks
+        -- tracker.visited so we mirror to both).
+        if d <= CONFIRMED_RANGE_M
+           and (not actor.is_interactable or not actor:is_interactable())
+        then
+            local key = find.key_for('enticement', actor, p)
+            _confirmed_consumed[key] = true
+            tracker.visited = tracker.visited or {}
+            tracker.visited[key] = true
+            if settings.debug_mode then
+                console.print(string.format(
+                    '[Undercity] enticement already consumed (close-range non-interactable): %s @ (%.0f,%.0f)',
+                    sn, p:x(), p:y()))
+            end
+            task.target_key    = nil
+            task.interact_time = nil
+            task.last_click_t  = nil
+            task.click_count   = nil
+            task.status = 'skipped consumed: ' .. sn
+            return
+        end
+
         move.to_actor(actor)
         task.status = string.format('walking to %s (%.0fm)', sn, d)
         return
@@ -215,10 +384,18 @@ task.Execute = function ()
 
     -- Actor is no longer interactable -> success!  This is the canonical
     -- "consumed" signal regardless of whether our last click or some
-    -- other event finished it.  Mark visited, accumulate the hearth
-    -- count, restore orbwalker.
+    -- other event finished it.  Mark visited + module-level consumed,
+    -- accumulate the hearth count, restore orbwalker, AND set the
+    -- post-consume anchor so the room gets cleared before we move on.
+    local consumed_key = find.key_for('enticement', actor, p)
     tracker.visited = tracker.visited or {}
-    tracker.visited[find.key_for('enticement', actor, p)] = true
+    tracker.visited[consumed_key] = true
+    _confirmed_consumed[consumed_key] = true
+    _post_consume_anchor = {
+        x     = p:x(),
+        y     = p:y(),
+        set_t = get_time_since_inject() or 0,
+    }
     if is_hearth_skin(sn) then
         tracker.hearth_count = (tracker.hearth_count or 0) + 1
     end

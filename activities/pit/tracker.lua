@@ -29,10 +29,13 @@ local tracker = {
     boss_seen          = false,    -- boss appeared in stream this floor
     boss_killed_at     = nil,      -- get_time_since_inject() of the kill
     glyph_done         = false,    -- final-floor glyph upgrade processed
+    glyph_done_t       = nil,      -- monotonic seconds when flipped done;
+                                   -- exit gates on core.exit_grace from this.
 
     -- Run lifecycle
     run_start_t        = nil,
     chest_looted       = false,    -- end-of-run reward chest
+    chest_looted_t     = nil,      -- monotonic seconds when flipped done.
 
     -- Active task introspection (set by tasks/runner.lua)
     current_task       = { name = 'idle', status = 'idle' },
@@ -49,8 +52,10 @@ tracker.reset_run = function ()
     tracker.boss_seen          = false
     tracker.boss_killed_at     = nil
     tracker.glyph_done         = false
+    tracker.glyph_done_t       = nil
     tracker.run_start_t        = get_time_since_inject and get_time_since_inject() or 0
     tracker.chest_looted       = false
+    tracker.chest_looted_t     = nil
     tracker.current_task       = { name = 'idle', status = 'idle' }
 end
 

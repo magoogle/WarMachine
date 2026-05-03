@@ -11,8 +11,9 @@
 -- driving).  v1: always self-runs in standalone mode.
 -- ---------------------------------------------------------------------------
 
-local tracker  = require 'activities.pit.tracker'
-local settings = require 'activities.pit.settings'
+local tracker    = require 'activities.pit.tracker'
+local settings   = require 'activities.pit.settings'
+local exit_grace = require 'core.exit_grace'
 
 local task = { name = 'exit', status = 'idle', debounce_t = nil }
 
@@ -25,9 +26,27 @@ end
 
 task.shouldExecute = function ()
     if not in_pit() then return false end
-    -- Exit triggers
-    if tracker.glyph_done then return true end
-    if tracker.chest_looted and settings.exit_after_chest then return true end
+    -- Run-complete triggers gate on the universal 15s loot grace
+    -- (core.exit_grace.MIN_GRACE_S) so any post-kill drops have time
+    -- to be picked up before we tear down.  The completion timestamp
+    -- gets stamped where the latch flips (upgrade_glyph for glyph_done,
+    -- the chest-loot path for chest_looted) -- here we only check it.
+    if tracker.glyph_done then
+        if exit_grace.has_elapsed(tracker.glyph_done_t) then return true end
+        task.status = string.format('looting (%.0fs left)',
+            exit_grace.remaining(tracker.glyph_done_t))
+        return false
+    end
+    if tracker.chest_looted and settings.exit_after_chest then
+        if exit_grace.has_elapsed(tracker.chest_looted_t) then return true end
+        task.status = string.format('looting (%.0fs left)',
+            exit_grace.remaining(tracker.chest_looted_t))
+        return false
+    end
+    -- Safety timeout -- the auto_reset_after window covers any case
+    -- where the run latch never flipped (boss death missed by tracker,
+    -- glyph upgrade fizzled).  No grace gate here -- timeout means
+    -- we're already well past any sensible loot window.
     if tracker.run_start_t
        and (tracker.run_start_t + settings.auto_reset_after) < get_time_since_inject()
     then

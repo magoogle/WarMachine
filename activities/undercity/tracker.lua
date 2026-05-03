@@ -13,6 +13,8 @@ local tracker = {
     boss_seen                = false,
     boss_killed_at           = nil,
     chest_looted             = false,
+    chest_looted_t           = nil,    -- monotonic seconds when flipped done;
+                                       -- exit gates on core.exit_grace from this.
 
     -- SpiritHearth_Switch interaction cap (vs unlimited beacons)
     hearth_count             = 0,
@@ -30,6 +32,7 @@ tracker.reset_run = function ()
     tracker.boss_seen      = false
     tracker.boss_killed_at = nil
     tracker.chest_looted   = false
+    tracker.chest_looted_t = nil
     tracker.hearth_count   = 0
     tracker.run_start_t    = get_time_since_inject and get_time_since_inject() or 0
     tracker.current_task   = { name = 'idle', status = 'idle' }

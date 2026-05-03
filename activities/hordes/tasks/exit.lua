@@ -14,6 +14,7 @@
 
 local settings    = require 'activities.hordes.settings'
 local tracker     = require 'activities.hordes.tracker'
+local exit_grace  = require 'core.exit_grace'
 -- core.settings + core.mode let us tell standalone HORDES from WarPlan mode
 -- so we only fire reset_all_dungeons in standalone (WarPlan drives Next-Obj
 -- + Tyrael turn-in via task_manager).
@@ -44,7 +45,19 @@ task.shouldExecute = function ()
     -- interactable" so the run never declared done after a rejected
     -- click.  See open_chest.lua header for the rewrite rationale.
     if tracker.chest_phase_done then
-        return true
+        -- Universal 15s loot grace -- hold the run-done state so any
+        -- pickup-on-walk loot from the boss waves has a chance to be
+        -- collected before we tear down the dungeon.  Was instant
+        -- before this gate; user reported "exited instantly after
+        -- killing boss, no time to loot."
+        if exit_grace.has_elapsed(tracker.chest_phase_done_t) then
+            return true
+        end
+        -- Still in grace; surface a status update via the task table
+        -- so the GUI shows "looting (Ns)" instead of going idle.
+        task.status = string.format('looting (%.0fs left)',
+            exit_grace.remaining(tracker.chest_phase_done_t))
+        return false
     end
     -- Path 2: safety timeout
     if tracker.run_start_t and settings.auto_reset_after

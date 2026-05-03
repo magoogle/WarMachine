@@ -138,4 +138,80 @@ end
 external.list_activities = activity_manager.list_activities
 external.is_activity_loaded = activity_manager.is_activity_loaded
 
+-- ---------------------------------------------------------------------------
+-- Live diagnostic probe.  Returns a snapshot of the per-task shouldExecute
+-- result for the active activity, plus a summary of why the runner might
+-- be stuck.  Used by the MCP bridge to debug "bot is doing nothing" cases.
+-- ---------------------------------------------------------------------------
+external.debug_probe = function ()
+    local out = {
+        enabled       = settings.enabled,
+        keybind_state = settings.get_keybind_state(),
+        mode          = settings.mode,
+        mode_label    = mode.label(settings.mode),
+        active_tag    = activity_manager.get_active_tag(),
+        debug_mode    = settings.debug_mode,
+    }
+    local tag = out.active_tag
+    if not tag then
+        out.note = 'no active activity'
+        return out
+    end
+    local act = activity_manager.get_activity(tag)
+    if not act then
+        out.note = 'activity ' .. tag .. ' not in registry'
+        return out
+    end
+    out.api_should = act.shouldExecute and act.shouldExecute() or false
+    -- Reach into the activity's runner to dump the task list with live
+    -- shouldExecute results.  Each activity exposes runner via a known
+    -- path; we look it up dynamically.
+    local runner_path = 'activities.' .. tag .. '.tasks.runner'
+    local ok, runner = pcall(require, runner_path)
+    if not ok or not runner or not runner._tasks then
+        out.note = 'runner not introspectable: ' .. tostring(runner)
+        return out
+    end
+    out.tasks = {}
+    for i, t in ipairs(runner._tasks) do
+        local ok_se, want = pcall(t.shouldExecute or function () return false end)
+        out.tasks[#out.tasks + 1] = {
+            i      = i,
+            name   = t.name or '?',
+            status = t.status or '-',
+            should = ok_se and want or ('err:' .. tostring(want)),
+        }
+    end
+    -- Activity-specific extras (boss only for now)
+    if tag == 'boss' then
+        local ok_t, boss_tracker = pcall(require, 'activities.boss.tracker')
+        local ok_s, boss_settings = pcall(require, 'activities.boss.settings')
+        local ok_d, boss_data = pcall(require, 'activities.boss.data.boss_data')
+        if ok_t then
+            out.boss_tracker = {
+                target_boss_id  = boss_tracker.target_boss_id,
+                last_teleport_t = boss_tracker.last_teleport_t,
+                run_done        = boss_tracker.run_done,
+            }
+        end
+        if ok_s then
+            out.boss_settings = {
+                selection_mode = boss_settings.selection_mode,
+                primary_boss   = boss_settings.primary_boss,
+                enabled_ids    = boss_settings.enabled_boss_ids(),
+            }
+        end
+        out.teleport_api_present = (teleport_to_boss_dungeon ~= nil)
+        local w = get_current_world()
+        local zone = w and w.get_current_zone_name and w:get_current_zone_name() or nil
+        out.zone = zone
+        if ok_d and zone then
+            local cb = boss_data.boss_for_zone(zone)
+            out.current_zone_boss = cb and cb.id or nil
+        end
+        out.now = get_time_since_inject()
+    end
+    return out
+end
+
 return external

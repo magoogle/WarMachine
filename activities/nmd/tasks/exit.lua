@@ -36,17 +36,24 @@
 local settings    = require 'activities.nmd.settings'
 local tracker     = require 'activities.nmd.tracker'
 local quest_state = require 'activities.nmd.quest_state'
+local exit_grace  = require 'core.exit_grace'
 local waypoints   = require 'data.waypoints'
 local zone        = require 'core.zone'
 local core_mode   = require 'core.mode'
 
 local task = { name = 'exit', status = 'idle', tp_fired_t = nil }
 
--- Grace period between detected completion and TP, to let the Horadric
--- chest spawn and loot_chest interact with it.
-local CHEST_GRACE_S        = 8
+-- Grace period between detected completion and TP -- gives the
+-- horadric chest time to spawn + loot_chest a window to grab it +
+-- ground-drop loot a chance to land.  Sourced from core.exit_grace
+-- so every activity uses the same value (currently 15s per user
+-- spec).
+local CHEST_GRACE_S        = exit_grace.MIN_GRACE_S
 local TP_DEBOUNCE_S        = 6   -- don't re-fire TP while the zone is loading
-local BOSS_DEAD_FALLBACK_S = 12  -- boss-death fallback if quest API silent
+-- Boss-death fallback fires only if the quest API never reported
+-- complete.  Must stay >= CHEST_GRACE_S so the no-quest-signal path
+-- doesn't accidentally bypass the loot-grace floor.
+local BOSS_DEAD_FALLBACK_S = math.max(CHEST_GRACE_S + 4, 19)
 
 -- Update quest-log latches.  Called every shouldExecute pulse.
 -- Latches are sticky: once nmd_quest_seen flips on, it stays on until

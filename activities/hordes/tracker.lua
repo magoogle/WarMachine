@@ -22,7 +22,11 @@ local tracker = {
     failed_chest_skins = {},    -- { ['BSK_UniqueOpChest_GreaterAffix'] = true, ... }
     -- True when every enabled chest skin has either been opened OR
     -- failed -- nothing more to try.  exit.lua fires once this latches.
-    chest_phase_done = false,
+    chest_phase_done   = false,
+    chest_phase_done_t = nil,    -- monotonic seconds when phase flipped done;
+                                 -- exit.lua gates on core.exit_grace.has_elapsed
+                                 -- against this so the run holds for the
+                                 -- universal 15s loot grace.
     run_done        = false,    -- triggers exit task (standalone) / WarPlan Next-Obj
     current_task    = { name = 'idle', status = 'idle' },
 }
@@ -37,6 +41,7 @@ tracker.reset_run = function ()
     tracker.chest_opened_count  = 0
     tracker.failed_chest_skins  = {}
     tracker.chest_phase_done    = false
+    tracker.chest_phase_done_t  = nil
     tracker.run_done            = false
     tracker.run_start_t         = get_time_since_inject and get_time_since_inject() or 0
     tracker.current_task        = { name = 'idle', status = 'idle' }

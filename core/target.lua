@@ -32,6 +32,43 @@ local function specialness(a)
     return boss, (champ or elite)
 end
 
+-- Goblin override: any actor whose skin name contains "goblin" (case
+-- insensitive) is high kill priority -- bumped above bosses.
+-- Treasure goblins flee fast and despawn; the user spec'd "if we see
+-- it, we must kill it.  regardless of the module."
+--
+-- Detection is substring on the skin (matches TreasureGoblin_*,
+-- AetherGoblin_* if the host returns them as enemies, etc.); we
+-- intentionally don't whitelist a finite set of skins so future
+-- season-prefixed variants still trigger.
+local function _is_goblin(a)
+    if not a or not a.get_skin_name then return false end
+    local sn = nil
+    pcall(function () sn = a:get_skin_name() end)
+    if not sn or sn == '' then return false end
+    return sn:lower():find('goblin', 1, true) ~= nil
+end
+
+-- Quest-hint override: enemies whose skin substring-matches a current
+-- quest objective keyword get TOP priority.  Example: NMD objective
+-- "Slay the Aldurkin: 1" -- when the last Aldurkin streams in,
+-- hunting it down beats every other tier including goblins.
+--
+-- See core/quest_hint.lua for the keyword extraction.  Imported
+-- lazily (inside the predicate) so the require is deferred -- avoids
+-- a circular dep risk + lets target.lua load even when quest_hint
+-- happens to error.
+local function _is_quest_hint(a)
+    if not a or not a.get_skin_name then return false end
+    local sn = nil
+    pcall(function () sn = a:get_skin_name() end)
+    if not sn or sn == '' then return false end
+    local ok, qh = pcall(require, 'core.quest_hint')
+    if not ok or not qh or not qh.skin_matches_hint then return false end
+    local mok, matched = pcall(qh.skin_matches_hint, sn)
+    return mok and matched == true
+end
+
 -- ---- Unreachable blacklist ----
 --
 -- Cross-activity registry of actors whose positions the walker (or any
@@ -105,6 +142,27 @@ local function is_actor_walkable_destination(a)
     return ok and walkable == true
 end
 
+-- ---- Path-based reachability check ----
+--
+-- is_point_walkeable says "this cell is on the navmesh"; it does NOT
+-- say "the player can walk there from here."  An NMD champion 20y
+-- east through a closed door is on the navmesh AND within 25y range,
+-- and gets picked by the closest-special tier even though path
+-- distance is infinite.
+--
+-- v3: this used to be a local cache + check inline here.  Factored
+-- into core/reach.lua so other tasks (interact_poi, seek_progression,
+-- etc.) share the same A*-with-coarse-cell-cache primitive.  Same
+-- contract: passing budget=REACH_CHECK_BUDGET caps per-pick A* calls
+-- so a 30-mob pile can't pin the game thread.
+local reach = require 'core.reach'
+
+local REACH_CHECK_BUDGET = 6   -- A* calls per pick; rest assumed reachable
+
+local function is_actor_reachable(pp, a)
+    return reach.is_actor_reachable(pp, a)
+end
+
 -- Pick a kill target from the host's near-target list.
 --
 -- opts.range    (required) max engagement distance in y
@@ -124,9 +182,20 @@ M.pick = function (opts)
     if not enemies then _G.WARMACHINE_TARGET = nil; return nil end
 
     local now = get_time_since_inject() or 0
-    local best = { boss = nil, boss_d = math.huge,
-                   spec = nil, spec_d = math.huge,
-                   any  = nil, any_d  = math.huge }
+
+    -- Two-phase pick:
+    --   Phase 1: collect all candidates passing the cheap O(1) filters
+    --            (HP > 1, in range, on-navmesh, not blacklisted).
+    --   Phase 2: walk the candidates in (tier, distance) order asking
+    --            the host pathfinder if the player can REACH each one.
+    --            First reachable per tier wins.  This keeps the
+    --            "30y elite beats 5y skeleton" guarantee while
+    --            rejecting elites stuck behind a closed door.
+    --
+    -- Phase 2 is bounded by REACH_CHECK_BUDGET so a 30-mob pile can't
+    -- pin the game thread doing A* per candidate.  Beyond the budget
+    -- we trust the navmesh check + the PURSUIT_STALL_S safety net.
+    local candidates = { quest = {}, goblin = {}, boss = {}, spec = {}, any = {} }
 
     for _, e in pairs(enemies) do
         local hp = e.get_current_health and e:get_current_health() or 0
@@ -136,34 +205,75 @@ M.pick = function (opts)
                 local dx, dy = p:x() - pp:x(), p:y() - pp:y()
                 local d = math.sqrt(dx*dx + dy*dy)
                 if d <= range and (not opts or not opts.filter or opts.filter(e, d)) then
-                    -- Universal filters (per user spec, applied to
-                    -- every activity's kill_monster):
-                    --   * Skip enemies whose position isn't on the
-                    --     navmesh -- can't be reached even in theory.
-                    --   * Skip enemies recently marked unreachable by
-                    --     a stuck-detect (closed door, off-mesh, etc.).
-                    -- Both filters are O(1); is_point_walkeable is the
-                    -- recorder's primitive and the unreachable check is
-                    -- a hash lookup.
                     local key = actor_key(e)
                     local skip = is_unreachable(key, now)
                                  or not is_actor_walkable_destination(e)
                     if not skip then
-                        local boss, special = specialness(e)
-                        if boss then
-                            if d < best.boss_d then best.boss, best.boss_d = e, d end
-                        elseif special then
-                            if d < best.spec_d then best.spec, best.spec_d = e, d end
+                        local bucket
+                        -- QUEST-HINT OVERRIDE: actor's skin matches
+                        -- a current quest objective keyword.  Top
+                        -- priority across the board so the bot
+                        -- finishes the run instead of farming chaff.
+                        if _is_quest_hint(e) then
+                            bucket = 'quest'
+                        -- GOBLIN OVERRIDE: any actor whose skin
+                        -- contains 'goblin' beats bosses (loot
+                        -- urgency) -- see _is_goblin.
+                        elseif _is_goblin(e) then
+                            bucket = 'goblin'
                         else
-                            if d < best.any_d  then best.any,  best.any_d  = e, d end
+                            local boss, special = specialness(e)
+                            bucket = boss and 'boss' or (special and 'spec' or 'any')
                         end
+                        candidates[bucket][#candidates[bucket] + 1] = { actor = e, dist = d, key = key }
                     end
                 end
             end
         end
     end
 
-    local picked = best.boss or best.spec or best.any
+    -- Sort each tier ascending by distance.  Lua's table.sort is
+    -- stable enough for these small lists (<30 typical).
+    for _, list in pairs(candidates) do
+        table.sort(list, function (a, b) return a.dist < b.dist end)
+    end
+
+    -- Walk tiers in priority order; for each, scan candidates in
+    -- distance order asking the pathfinder for reachability.  First
+    -- reachable wins.  Auto-blacklist anything we found unreachable so
+    -- the next pulse doesn't re-A* it.
+    --   1. quest   -- objective-relevant (e.g. "Slay the Aldurkin")
+    --   2. goblin  -- treasure goblin / aether goblin
+    --   3. boss    -- regular boss tier
+    --   4. spec    -- elite / champion
+    --   5. any     -- white mobs
+    local picked = nil
+    local reach_budget = REACH_CHECK_BUDGET
+    for _, tier in ipairs({ 'quest', 'goblin', 'boss', 'spec', 'any' }) do
+        for _, c in ipairs(candidates[tier]) do
+            if reach_budget <= 0 then
+                -- Budget exhausted -- accept the closest remaining in
+                -- this tier without path-check; PURSUIT_STALL_S will
+                -- catch genuinely-unreachable picks within 5s.
+                picked = c.actor
+                break
+            end
+            reach_budget = reach_budget - 1
+            if is_actor_reachable(pp, c.actor) then
+                picked = c.actor
+                break
+            else
+                -- Not reachable from current position.  Soft-blacklist
+                -- so we don't re-A* this same actor over and over.  TTL
+                -- matches UNREACHABLE_TTL_S (20s) -- if the door opens
+                -- inside that window the bot will just take a beat
+                -- longer to engage; the next pulse after expiry
+                -- re-evaluates.
+                if c.key then _unreachable[c.key] = now + UNREACHABLE_TTL_S end
+            end
+        end
+        if picked then break end
+    end
     -- Pursuit-stall blacklist.  If we keep picking the same target and
     -- the distance isn't closing, it's unreachable (closed door, off-
     -- mesh, in another room).  Blacklist it for UNREACHABLE_TTL_S so

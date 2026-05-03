@@ -2,6 +2,22 @@
 
 local M = {}
 
+-- Skin patterns that should be SCORED AS OBJECTIVES even when the
+-- recorder classified them as the catch-all 'interactable' kind.
+--
+-- Why: the recorder's actor_capture has expanded its `objective`
+-- kind to include DGN_Switch / DGN_Lever / NMD_Pedestal / etc., but
+-- existing catalog data captured before that change still tags
+-- these as `kind = 'interactable'`.  Without a runtime fallback the
+-- old data scores at DEFAULT_WEIGHT (80) and the bot deprioritizes
+-- gating interactables behind cosmetic chests.
+--
+-- Patterns are Lua regex; the matcher uses string.match.  Substring
+-- patterns (e.g. 'DGN_Switch') work fine because Lua's match treats
+-- a plain string as a literal substring search when no special
+-- characters are present.
+local OBJECTIVE_SKIN_PATTERNS = require 'activities.nmd.data.objective_patterns'
+
 local POI_REBUILD_INTERVAL_S = 1.5
 
 local TYPE_WEIGHT = {
@@ -10,9 +26,36 @@ local TYPE_WEIGHT = {
     chest           =  500,
     chest_helltide_random = 500,
     shrine          =  300,
+    -- Carry-objects: pick-up-and-ferry quest items.  Same gating
+    -- priority as a switch -- you can't progress without taking
+    -- them somewhere.
+    carry_object    = 1200,
+    -- NMD-specific glyph stone (post-boss XP upgrade).  High
+    -- priority but only after the boss room is open; the runner's
+    -- task ordering handles the temporal gating.
+    glyph_gizmo     = 1100,
 }
 local DEFAULT_WEIGHT = 80
 local DISTANCE_COEFF = 0.5
+
+-- Memoized "does this skin look like an objective?" -- the regex
+-- loop runs once per unique skin per session.  Per-pulse this
+-- becomes a single hash lookup for the typical 50-200 catalog
+-- entries we score.
+local _skin_is_objective_cache = {}
+local function skin_is_objective(skin)
+    if not skin or skin == '' then return false end
+    local cached = _skin_is_objective_cache[skin]
+    if cached ~= nil then return cached end
+    for _, pat in ipairs(OBJECTIVE_SKIN_PATTERNS) do
+        if skin:match(pat) then
+            _skin_is_objective_cache[skin] = true
+            return true
+        end
+    end
+    _skin_is_objective_cache[skin] = false
+    return false
+end
 
 local function dist2_player(poi)
     local lp = get_local_player()
@@ -54,15 +97,27 @@ local function score_poi(poi, ctx)
         math.floor(poi.y or 0))
     if ctx.visited[key] then return nil end
 
-    if kind == 'chest' or kind == 'chest_helltide_random' or kind == 'chest_horadric' then
+    -- Effective kind: promote 'interactable' to 'objective' when the
+    -- skin matches one of the OBJECTIVE_SKIN_PATTERNS.  This catches
+    -- the old-data case where a DGN_Switch was captured before the
+    -- recorder knew to call it an objective -- without this, those
+    -- entries score at DEFAULT_WEIGHT (80) and the bot deprioritizes
+    -- gating switches behind chests.  New captures arrive already
+    -- tagged 'objective' so this branch is a no-op for fresh data.
+    local effective_kind = kind
+    if kind == 'interactable' and skin_is_objective(poi.skin) then
+        effective_kind = 'objective'
+    end
+
+    if effective_kind == 'chest' or effective_kind == 'chest_helltide_random' or effective_kind == 'chest_horadric' then
         if not ctx.settings.do_chests then return nil end
-    elseif kind == 'shrine' then
+    elseif effective_kind == 'shrine' then
         if not ctx.settings.do_shrines then return nil end
-    elseif kind == 'objective' then
+    elseif effective_kind == 'objective' or effective_kind == 'carry_object' then
         if not ctx.settings.do_objectives then return nil end
     end
 
-    local weight = TYPE_WEIGHT[kind] or DEFAULT_WEIGHT
+    local weight = TYPE_WEIGHT[effective_kind] or DEFAULT_WEIGHT
     local d2 = dist2_player(poi)
     local d  = math.sqrt(d2)
     return weight - (d * DISTANCE_COEFF), d

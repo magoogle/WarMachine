@@ -1,56 +1,57 @@
 -- ---------------------------------------------------------------------------
 -- activities/helltide/tasks/interact_poi.lua
 --
--- The main task: walk to the highest-priority POI in the queue and click it.
+-- Walk to + click the highest-priority POI in the queue: chests,
+-- ores, herbs, shrines, pyres, world-event triggers.  Movement uses
+-- core.move's tiered fallback (host pathfinder when WarPath has data,
+-- internal walker otherwise).
 --
--- "POI" = anything from poi_priority.lua's score_poi -- chests, ores, herbs,
--- shrines, pyres, world events.  Movement uses move.lua's 3-tier fallback so
--- we get D4 click-to-walk when the actor's in stream, StaticPather routing
--- when it isn't but its position is known, and Batmobile freeroam when
--- neither tier has data.
+-- Shared primitives (see core/poi_pick.lua, core/live_actor.lua):
+--   * Reachability filter on the queue picker (skip catalog entries
+--     the host pathfinder can't currently route to)
+--   * Live-actor matcher with helltide-specific Pyre fallback (see
+--     extra_match below) so a catalog-stamped Pyre POI still finds
+--     a runtime Pyre_Helltide_* live actor.
 -- ---------------------------------------------------------------------------
 
-local move         = require 'core.move'
-local tracker      = require 'activities.helltide.tracker'
-local settings     = require 'activities.helltide.settings'
+local move        = require 'core.move'
+local poi_pick    = require 'core.poi_pick'
+local live_actor  = require 'core.live_actor'
+local tracker     = require 'activities.helltide.tracker'
+local settings    = require 'activities.helltide.settings'
 local poi_priority = require 'activities.helltide.poi_priority'
 
 local task = { name = 'interact_poi', status = 'idle' }
 
--- Distance at which we switch from "walking toward" to "trying to click".
 local INTERACT_RADIUS = 3.0
 
--- Find the live actor matching a POI table (so we can call interact_object
--- on the actual game object instead of a stale position).  Match by skin
--- name first, fall back to nearest of same kind within a small radius.
-local function live_actor_for(poi)
-    if not actors_manager or not actors_manager.get_ally_actors then return nil end
-    local candidates = {}
-    for _, a in pairs(actors_manager:get_ally_actors()) do
-        local sn = a:get_skin_name()
-        if sn and (sn == poi.skin or (poi.kind == 'pyre' and sn:find('Pyre_Helltide')))
-        then
-            local p = a:get_position()
-            if p then
-                local dx = p:x() - (poi.x or 0)
-                local dy = p:y() - (poi.y or 0)
-                local d2 = dx*dx + dy*dy
-                if d2 < 64 then   -- within 8m of the cataloged position
-                    candidates[#candidates + 1] = { a = a, d2 = d2 }
-                end
-            end
-        end
-    end
-    table.sort(candidates, function (x, y) return x.d2 < y.d2 end)
-    if candidates[1] then return candidates[1].a end
-    return nil
+local picker = poi_pick.make_picker({
+    budget        = 4,
+    short_stale_s = 6.0,
+})
+
+-- Helltide-specific live-actor extra-match.  When the catalog says
+-- kind='pyre' but the runtime skin is some Pyre_Helltide_* variant
+-- the recorder didn't capture verbatim, accept any skin substring-
+-- matching 'Pyre_Helltide'.
+local function helltide_pyre_fallback(live_skin, poi)
+    if poi.kind ~= 'pyre' then return false end
+    return live_skin and live_skin:find('Pyre_Helltide', 1, true) ~= nil
+end
+
+local function find_helltide_actor(poi)
+    return live_actor.find(poi, {
+        scan_lists  = 'ally',         -- helltide POIs are ally-only
+        match_mode  = 'exact',        -- catalog skin = runtime skin almost always
+        extra_match = helltide_pyre_fallback,
+    })
 end
 
 task.shouldExecute = function ()
     -- Yield to higher-priority tasks; this fires whenever we have ANY POI
     -- in the queue (which is most of the time during a helltide hour).
     local q = poi_priority.build(tracker, settings, tracker.in_maiden)
-    return q and #q > 0
+    return picker.pick(q) ~= nil
 end
 
 task.Execute = function ()
@@ -60,9 +61,9 @@ task.Execute = function ()
     if not pp then return end
 
     local q = poi_priority.build(tracker, settings, tracker.in_maiden)
-    local target = q[1]
+    local target = picker.pick(q, { player_pos = pp })
     if not target then
-        task.status = 'no targets'
+        task.status = 'no reachable POI (exploring)'
         return
     end
 
@@ -70,11 +71,8 @@ task.Execute = function ()
     local dy = target.y - pp:y()
     local d  = math.sqrt(dx*dx + dy*dy)
 
-    -- Out-of-range: route there.  D4 click-to-walk handles short hops once
-    -- the actor's in stream; for cross-zone distances, move.lua uses
-    -- StaticPather + host pathfinder, falling back to Batmobile.
     if d > INTERACT_RADIUS then
-        local actor = live_actor_for(target)
+        local actor = find_helltide_actor(target)
         if actor then
             move.to_actor(actor)
             task.status = string.format('walking to %s (%.0fm)', target.kind, d)
@@ -86,10 +84,8 @@ task.Execute = function ()
         return
     end
 
-    -- Within interact radius.  Click if a live actor exists; otherwise the
-    -- POI was a stale catalog entry (already opened, wandered off, etc.) --
-    -- mark it visited and let the next pulse pick a new target.
-    local actor = live_actor_for(target)
+    -- Within interact radius.
+    local actor = find_helltide_actor(target)
     if not actor then
         if settings.debug_mode then
             console.print(string.format(

@@ -46,24 +46,79 @@ local move = require 'core.move'
 
 local M = {}
 
+-- ---------------------------------------------------------------------------
+-- WarPath integration: when WarPathPlugin exposes a preloaded nav grid
+-- for the current zone, prefer its frontier picker over our ring-
+-- scoring heuristic.  WarPath's frontier knows the FULL walkable
+-- mesh from server-merged data -- the ring picker only sees a 1.5y
+-- radius around the player, which makes it bounce between the same
+-- few cells in roomy zones where the actual unexplored area is 30y
+-- away.  When WarPath isn't available (or hasn't preloaded the
+-- current zone yet) we fall through to the legacy ring picker, so
+-- coverage on uncatalogued zones stays unchanged.
+-- ---------------------------------------------------------------------------
+local function plugin()
+    return rawget(_G, 'WarPathPlugin')
+        or rawget(_G, 'StaticPatherPlugin')
+        or nil
+end
+
+-- Returns a vec3 frontier target from WarPath, or nil to fall back.
+local function warpath_frontier(player_pos, cur_zone)
+    local p = plugin()
+    if not p or not p.exploration_frontier or not p.exploration_tick then return nil end
+    -- Tick the WarPath explorer so visited cells get marked as we move.
+    -- It's idempotent within a single tick so calling here + from
+    -- WarPath's own main_pulse doesn't double-count.
+    pcall(p.exploration_tick, cur_zone, player_pos)
+    local target = p.exploration_frontier(cur_zone, player_pos)
+    return target
+end
+
 -- ---- Tunables ----
 -- Tightened from the v1 defaults (12y ring / 8 dirs / 2.5s stuck) after
 -- live testing showed the bot walking into walls and over-committing to
 -- targets it couldn't actually reach.  Then tightened FURTHER (6y ->
 -- 1.5y) per user feedback "we are targeting something too far away when
--- using explorer and its causing us to get stuck".  Very short steps
--- (1.5y) mean the bot can't commit to a target it can't reach -- if the
--- next 1.5y is walkable, take it; if not, pick a different direction
--- next pulse.  Walkability check + dead-end marking still cap the
--- worst-case wandering.
-local CELL_SIZE_M    = 1.5       -- visit grid -- match step size for fine dedup
-local RING_DIST_M    = 1.5       -- scan radius for frontier candidates (was 6)
-local NUM_DIRS       = 12        -- 12 directions = every 30°
+-- using explorer and its causing us to get stuck".
+--
+-- v3 (2026-05): the 1.5y step is GREAT for chasing ring picks in zones
+-- where WarPath supplies frontier targets, but TERRIBLE for finding
+-- mobs in big uncharted dungeon rooms (NMD's "Slay the Aldurkin: 1"
+-- with no catalog data -- the lone Aldurkin is somewhere across a
+-- 60y room and we'd take forever to bump into them at 1.5y/tick).
+-- We now pick the ring radius dynamically:
+--   * UNCHARTED zone (WarPath status.supported == false): big ring,
+--     covers ground fast, finds far-away mobs in fewer pulses.
+--   * CHARTED zone: small ring, leans on WarPath's frontier picker
+--     for the long-distance navigation and only uses our ring scorer
+--     for the final approach.
+-- See pick_ring_dist() below.
+local CELL_SIZE_M       = 1.5     -- visit grid -- match the small-step size
+local RING_DIST_SMALL_M = 1.5     -- charted-zone ring (WarPath drives long-distance)
+local RING_DIST_LARGE_M = 8.0     -- uncharted-zone ring (cover more ground)
+local NUM_DIRS          = 12      -- 12 directions = every 30°
 local SAMPLE_TICK_S  = 0.2
 local PICK_TICK_S    = 0.5       -- re-pick more often since steps are shorter
 local STUCK_WINDOW_S = 1.5       -- "no movement for this long" => stuck
 local STUCK_DELTA_M  = 0.3       -- min cumulative movement in window (smaller scale)
-local ARRIVE_RADIUS_M     = 0.8  -- must be < RING_DIST_M or we never arrive
+-- ARRIVE_RADIUS_M < min ring radius so we always reach the picked
+-- ring point.  At RING_DIST_LARGE_M we have plenty of margin; at
+-- RING_DIST_SMALL_M we need this tight.
+local ARRIVE_RADIUS_M     = 0.8
+
+-- Decide ring distance for THIS pick.  Probes WarPath status to
+-- detect uncharted zones; in uncharted zones we use the large
+-- radius to find far-away mobs faster.
+local function pick_ring_dist()
+    local p = rawget(_G, 'WarPathPlugin') or rawget(_G, 'StaticPatherPlugin')
+    if not p or not p.get_status then return RING_DIST_SMALL_M end
+    local ok, st = pcall(p.get_status)
+    if ok and st and st.supported == false then
+        return RING_DIST_LARGE_M
+    end
+    return RING_DIST_SMALL_M
+end
 local DEADEND_PENALTY     = 5.0
 local RECENT_REVISIT_S    = 30.0
 local RECENT_REVISIT_PEN  = 1.5
@@ -273,11 +328,16 @@ local function pick_target(now)
 
     -- Phase 1: score all ring points cheaply (no walkability check).
     -- Build a small array sorted high-to-low so we can pick top-down.
+    -- Ring radius adapts: large in uncharted zones (cover more ground
+    -- so we find far-away mobs faster), small when WarPath has data
+    -- (WarPath's frontier handles long-distance, ring is just for
+    -- the final approach).  See pick_ring_dist().
+    local ring_dist = pick_ring_dist()
     local cand = {}
     for i = 0, NUM_DIRS - 1 do
         local theta = (i / NUM_DIRS) * 2 * math.pi
-        local rx = px + math.cos(theta) * RING_DIST_M
-        local ry = py + math.sin(theta) * RING_DIST_M
+        local rx = px + math.cos(theta) * ring_dist
+        local ry = py + math.sin(theta) * ring_dist
         cand[#cand + 1] = { x = rx, y = ry, s = score_point(rx, ry, pz, now) }
     end
     table.sort(cand, function (a, b) return a.s > b.s end)
@@ -329,22 +389,47 @@ end
 
 -- Public: tick the explorer.  Call from a freeroam-fallback task once
 -- per pulse.  Returns the active target for diagnostic display.
+--
+-- Preference order each pulse:
+--   1. WarPath frontier (full-grid aware).  When the preloader has
+--      nav data for this zone, ask WarPath for the next unexplored
+--      cell.  This routes the bot toward genuinely unvisited rooms
+--      30y+ away rather than oscillating in the local 1.5y ring.
+--   2. Legacy ring-scoring picker (this file's bulk).  Used on
+--      zones the preloader hasn't reached, OR on zones with no
+--      curated data (the catalog is incomplete for new zones until
+--      a friend explores them).
 M.tick = function ()
     local cur_zone = zone.current()
     if not cur_zone then return nil end
     maybe_reset(cur_zone)
     local now = get_time_since_inject() or 0
+    local lp = get_local_player()
+    local pp = lp and lp:get_position() or nil
+    if not pp then return nil end
+
+    -- Path 1: WarPath frontier when available.  Returns a vec3 the
+    -- bot can walk to; we drive via core.move.to_pos so the same
+    -- tier-2 (host pathfinder) / tier-3 (walker) fallback stack
+    -- handles the actual movement.
+    local wp_target = warpath_frontier(pp, cur_zone)
+    if wp_target then
+        move.to_pos({ x = wp_target:x(), y = wp_target:y(), z = wp_target:z() },
+                    { arrive_radius = ARRIVE_RADIUS_M })
+        -- Stash for the diagnostic return value.  We don't update
+        -- state.target_x/y because WarPath owns the frontier state
+        -- in its own module; mixing the two would oscillate.
+        return wp_target:x(), wp_target:y(), 'warpath'
+    end
+
+    -- Path 2: legacy ring scorer.
     sample_position(now)
     pick_target(now)
     if state.target_x and state.target_y then
-        local lp = get_local_player()
-        local pp = lp and lp:get_position() or nil
-        if pp then
-            local goal = { x = state.target_x, y = state.target_y, z = pp:z() }
-            move.to_pos(goal, { arrive_radius = ARRIVE_RADIUS_M })
-        end
+        local goal = { x = state.target_x, y = state.target_y, z = pp:z() }
+        move.to_pos(goal, { arrive_radius = ARRIVE_RADIUS_M })
     end
-    return state.target_x, state.target_y
+    return state.target_x, state.target_y, 'legacy'
 end
 
 -- Public: clear all explorer state.  Called when an activity is forced
@@ -371,9 +456,10 @@ M.make_task = function (caller)
         return get_local_player() ~= nil
     end
     task.Execute = function ()
-        local tx, ty = M.tick()
+        local tx, ty, source = M.tick()
         if tx and ty then
-            task.status = string.format('exploring %s -> (%.0f,%.0f)', caller, tx, ty)
+            task.status = string.format('exploring %s -> (%.0f,%.0f) [%s]',
+                caller, tx, ty, source or 'legacy')
         else
             task.status = 'exploring ' .. caller
         end
