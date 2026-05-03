@@ -7,20 +7,13 @@
 -- kill_range, no portal/door/chest visible, etc.) the freeroam task
 -- takes the pulse and walks the bot toward unexplored space.
 --
--- Backend swap (was: BatmobilePlugin.enable):
--- ----------------------------------------------------------------------
--- Until now this module called BatmobilePlugin.enable(caller) every
--- ENABLE_HEARTBEAT_S seconds and let Batmobile drive the wandering.
--- Batmobile is no longer maintained -- it spins in place and over-
--- backtracks on roomy zones, both of which the user reported.  We now
--- delegate to core/explorer.lua, which uses our own visit-history grid
--- to pick frontier targets and walks via core/move.lua's tiered
--- StaticPather -> Batmobile fallback (Batmobile is still used for
--- locomotion when StaticPather lacks a route, just not for goal-picking).
+-- Delegates entirely to core/explorer.lua, which calls WarPath's
+-- exploration_tick + exploration_frontier.  WarPath handles the
+-- visited-cell grid, frontier scoring, and BatmobilePlugin.get_backtrack
+-- fallback for zones without curated nav data.
 --
--- The factory signature is unchanged so per-activity runners don't have
--- to be updated; the `caller` string is forwarded into the task name
--- for diagnostic output ("exploring warmachine_nmd -> (12,-3)").
+-- The factory signature is unchanged so per-activity runners need no
+-- updates; the `caller` string appears in the task's status display.
 -- ---------------------------------------------------------------------------
 
 local explorer = require 'core.explorer'

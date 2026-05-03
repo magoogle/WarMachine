@@ -34,21 +34,18 @@ local gui = {}
 --   * StaticPather  -- consumes WarMap merged data + the host pathfinder
 --   * AlfredTheButler -- inventory/town management (optional)
 --   * Looteer       -- loot pickup (optional)
--- Only Batmobile is hard-required (no fallback).  StaticPather is strongly
--- recommended.  Batmobile is GONE -- WarMachine internalized the
--- locomotion logic in core/walker.lua + core/explorer.lua.  We no
--- longer reference BatmobilePlugin at all.
+-- WarPath is required for all navigation (pathfinding, exploration, cross-zone
+-- travel).  It integrates BatmobilePlugin internally as a fallback when the
+-- host pathfinder returns an empty path.
 -- Alfred + Looteer are nice-to-haves; WarMachine still runs without them.
 -- ---------------------------------------------------------------------------
 local REQUIRED_PLUGINS = {
-    -- (none -- everything else is optional)
-}
-local OPTIONAL_PLUGINS = {
-    -- WarPath (renamed from StaticPather).  We accept either folder name
-    -- and either global; main.lua of the plugin sets BOTH globals as
-    -- aliases so existing references keep working through the rename.
+    -- WarPath is required for all navigation.  Accept either folder name;
+    -- WarPath's main.lua sets both globals as aliases.
     { folder = 'WarPath',          global = 'WarPathPlugin',
       alt_folder = 'StaticPather', alt_global = 'StaticPatherPlugin' },
+}
+local OPTIONAL_PLUGINS = {
     { folder = 'AlfredTheButler',  global = 'AlfredTheButlerPlugin'  },
     { folder = 'Looteer*',         global = 'LooteerPlugin'          },
 }
@@ -56,7 +53,7 @@ local OPTIONAL_PLUGINS = {
 local function get_missing_dependencies()
     local missing = {}
     for _, dep in ipairs(REQUIRED_PLUGINS) do
-        if _G[dep.global] == nil then
+        if _G[dep.global] == nil and _G[dep.alt_global or ''] == nil then
             missing[#missing + 1] = dep.folder
         end
     end

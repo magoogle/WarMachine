@@ -1,58 +1,41 @@
 -- ---------------------------------------------------------------------------
--- core/move.lua  --  Three-tier movement primitive.
+-- core/move.lua  --  Two-tier movement primitive.
 --
 -- Activity tasks call into this instead of directly invoking pathfinder
--- or the walker.  The primitive picks the best transport for the
--- situation in this priority order:
+-- or WarPath.  Two tiers in priority order:
 --
 --   1. Actor in stream  -> interact_object(actor)
 --      D4's native click-to-walk.  Works for any actor in actors_manager,
---      regardless of distance.  No Lua A*, no pause/resume games.
+--      regardless of distance.
 --
---   2. WarPath has data for the current zone  -> host pathfinder + centerline
---      WarPathPlugin.find_path(start, goal) drives world:calculate_path
---      under the hood and runs the result through centerline smoothing
---      using the server-precomputed wall_dist map.  We feed the next
---      waypoint into pathfinder.request_move and re-plan every pulse.
---      Path is collision-aware against the live walkable mesh.
+--   2. Position-based  -> WarPath (required)
+--      WarPathPlugin.find_path(start, goal) delegates to the host's
+--      world:calculate_path() with automatic BatmobilePlugin.find_long_path
+--      fallback inside WarPath when the host returns an empty path.
+--      Centerline smoothing runs when curated nav data exists for the zone.
+--      We feed the next waypoint into pathfinder.request_move and re-plan
+--      every pulse.
 --
---   3. Fallback  -> internal walker (core/walker.lua)
---      For zones we have no merged WarMap data on yet.  Plans a path
---      via the host's pathfinder and walks node-by-node with stuck
---      detection + evade-based unstick.  Borrows traversal-gizmo and
---      trap-escape patterns from the (deprecated) Batmobile plugin
---      WITHOUT a runtime dependency on it.
+-- Public API (functions return a status string):
 --
--- Public API (all functions return a status string -- 'interacted' /
--- 'walking' / 'arrived' / 'no_actor' / 'no_path' / etc):
+--   move.to_actor(actor)                   -- tier 1: click-to-walk
+--   move.to_pos(goal, opts)                -- tier 2: WarPath pathfinding
+--   move.to_actor_or_pos(actor, pos, opts)
+--   move.is_zone_supported()               -- bool: WarPath has curated data here
+--   move.clear()                           -- stop any in-flight movement
 --
---   move.to_actor(actor)              -- tier 1: click-to-walk + interact
---   move.to_pos(goal, opts)           -- tier 2 or 3 depending on data availability
---   move.to_actor_or_pos(actor, fallback_pos, opts)
---   move.is_zone_supported()          -- bool: does WarPath have data here
---
--- New cross-zone helpers (v2):
---   move.travel_to_zone(zone_name, opts)  -- multi-hop via WarPathPlugin.find_route
---   move.next_hop_actor(zone_name)        -- which actor in current zone leads
---                                            toward zone_name (for tasks that
---                                            want to display "go through X")
---   move.bookmark_here(name, kind?)       -- drop a POI bookmark at current pos
---                                            so a sequencer step can recall it
+-- Cross-zone helpers (delegates to WarPathPlugin):
+--   move.plan_to_zone(target_zone)
+--   move.next_hop_actor(target_zone)
+--   move.bookmark_here(id, kind?, meta?)
+--   move.bookmark_nearest(kind?)
 -- ---------------------------------------------------------------------------
 
 local M = {}
 
 -- ---------------------------------------------------------------------------
--- Plugin reference resolver.
---
--- The plugin used to be called StaticPatherPlugin.  After the rename to
--- WarPathPlugin we still want WarMachine to work with either:
---   * Newer bundles (only WarPathPlugin defined)
---   * Older bundles (only StaticPatherPlugin defined, no alias)
---   * The transition period (both defined as aliases of each other)
--- so resolve through a shim that re-checks each call -- the global may
--- not exist yet when this file is required, but will by the time
--- to_pos() actually fires.
+-- Plugin reference resolver.  Accepts both WarPathPlugin (current name)
+-- and StaticPatherPlugin (legacy alias) so bundles in transition keep working.
 -- ---------------------------------------------------------------------------
 local function plugin()
     return rawget(_G, 'WarPathPlugin')
@@ -72,17 +55,13 @@ M.to_actor = function (actor)
 end
 
 -- ---------------------------------------------------------------------------
--- Tier 2/3: position-based movement.
+-- Tier 2: position-based movement via WarPath.
 --
--- opts.arrive_radius    -- meters; default 3
--- opts.prefer_fallback  -- force tier 3 even when WarPath has data
---                          (useful when curated data is stale and the
---                          live mesh has changed)
--- opts.smooth           -- bool, default true: run centerline smoothing
---                          on the WarPath path.  Set false for exit-
---                          precision moves where hugging the wall is
---                          actually the goal (stepping ONTO a portal
---                          switch).
+-- opts.arrive_radius  -- meters; default 3
+-- opts.smooth         -- bool, default true: run centerline smoothing on the
+--                        WarPath path.  Set false for exit-precision moves
+--                        where hugging the wall is actually the goal (stepping
+--                        ONTO a portal switch).
 -- ---------------------------------------------------------------------------
 local DEFAULT_ARRIVE = 3.0
 
@@ -92,8 +71,7 @@ local function to_vec3(g, fallback_z)
     if not g then return nil end
     if type(g.x) == 'number' then return vec3:new(g.x, g.y, g.z or fallback_z) end
     if g[1] then return vec3:new(g[1], g[2], g[3] or fallback_z) end
-    -- Already a vec3 (g.x is a method).
-    return g
+    return g   -- already a vec3
 end
 
 M.is_zone_supported = function ()
@@ -104,14 +82,7 @@ end
 M.to_pos = function (goal, opts)
     -- Accept both signatures:
     --   move.to_pos(goal, { arrive_radius = 3.0, smooth = false })
-    --   move.to_pos(goal, 3.0)                     -- legacy: number = arrive radius
-    -- Several activity tasks (interact_poi.lua across nmd/pit/helltide/
-    -- undercity) historically passed a number here.  Indexing into a
-    -- number raises "attempt to index a number value", and because
-    -- QQT swallows pulse errors silently, the calling task would stop
-    -- progressing without a visible error -- e.g. NMD interact_poi
-    -- would cycle forever with status='idle' as the user reported.
-    -- Coerce here so old call sites keep working.
+    --   move.to_pos(goal, 3.0)   -- legacy: number = arrive radius
     if type(opts) == 'number' then
         opts = { arrive_radius = opts }
     elseif opts == nil then
@@ -129,48 +100,29 @@ M.to_pos = function (goal, opts)
     local d = pp:dist_to(goal)
     if d <= arrive then return 'arrived' end
 
-    -- Tier 2: WarPath + host pathfinder + centerline smoothing.
-    -- find_path returns the full smoothed waypoint list; we drive the
-    -- next 1-2 waypoints into the host's request_move so the bot
-    -- follows the centerlined route instead of the wall-hugging
-    -- direct path the host picks on its own.
+    -- WarPath: find_path delegates to world:calculate_path() with an
+    -- automatic BatmobilePlugin.find_long_path fallback inside WarPath
+    -- when the host pathfinder returns an empty path.
     local p = plugin()
-    if not opts.prefer_fallback and p and p.is_zone_supported and p.is_zone_supported() then
-        if p.find_path then
-            local find_opts = nil
-            if opts.smooth == false then
-                find_opts = { smooth = false }
-            end
-            local path = p.find_path(pp, goal, find_opts)
-            if path and #path > 0 then
-                -- Pick the FIRST node we haven't already passed.  Most
-                -- of the time path[1] is the player's position -- in
-                -- that case path[2] is the next real waypoint.  Falling
-                -- back to path[1] handles the single-node "almost there"
-                -- case.
-                local next_node = path[2] or path[1]
-                if next_node and pathfinder and pathfinder.request_move then
-                    pathfinder.request_move(next_node)
-                    return 'walking'
-                end
-            end
+    if not p or not p.find_path then return 'no_path' end
+
+    local find_opts = (opts.smooth == false) and { smooth = false } or nil
+    local path = p.find_path(pp, goal, find_opts)
+    if path and #path > 0 then
+        -- Pick the first node we haven't already passed.  path[1] is
+        -- usually the player's position; path[2] is the next real waypoint.
+        local next_node = path[2] or path[1]
+        if next_node and pathfinder and pathfinder.request_move then
+            pathfinder.request_move(next_node)
+            return 'walking'
         end
-        -- WarPath couldn't find a path; fall through to the walker.
     end
 
-    -- Tier 3: internal walker.  Plans a host A* path to the goal and
-    -- walks it node-by-node.  Borrows traversal-gizmo + trap-escape
-    -- patterns from the deprecated Batmobile plugin without depending
-    -- on the plugin itself.
-    local walker = require 'core.walker'
-    walker.set_target(goal)
-    walker.tick()
-    return 'walking'
+    return 'no_path'
 end
 
 -- ---------------------------------------------------------------------------
--- Convenience: try the live actor first, fall back to a known position
--- (typically the same actor's last-known coords from WarPath data).
+-- Convenience: try the live actor first, fall back to a known position.
 -- ---------------------------------------------------------------------------
 M.to_actor_or_pos = function (actor, fallback_pos, opts)
     if actor and M.to_actor(actor) == 'interacted' then return 'interacted' end
@@ -179,28 +131,21 @@ M.to_actor_or_pos = function (actor, fallback_pos, opts)
 end
 
 -- ---------------------------------------------------------------------------
--- Stop / clear any in-flight movement.  Activity tasks call this when
--- they decide they're done with a target so the walker doesn't keep
--- driving the player.  (Tier 1/2 don't have stick-iness; only the
--- tier-3 walker maintains a target across calls.)
---
--- `caller` parameter retained for source-compat with old call sites
--- that passed a Batmobile-style caller string; ignored internally.
+-- Stop any in-flight movement.  Activity tasks call this when done with
+-- a target so movement doesn't persist across pulses.
 -- ---------------------------------------------------------------------------
 M.clear = function (_caller)
-    local walker = require 'core.walker'
-    walker.stop()
+    if pathfinder and pathfinder.clear_stored_path then
+        pcall(pathfinder.clear_stored_path)
+    end
 end
 
 -- ---------------------------------------------------------------------------
--- Cross-zone helpers (v2: built on WarPathPlugin.find_route).
+-- Cross-zone helpers (delegates to WarPathPlugin).
 -- ---------------------------------------------------------------------------
 
 -- Returns an array of "go-here" steps to reach `target_zone` from the
--- player's current zone.  Each step is one of:
---   { kind='teleport', sno, to_zone, name }
---   { kind='walk',     in_zone, to_zone, via_actor = { skin, kind, x, y, z, sno_id } }
--- Returns nil + reason on unreachable.
+-- player's current zone, or nil + reason on unreachable.
 M.plan_to_zone = function (target_zone)
     local p = plugin()
     if not p or not p.find_route then return nil, 'no_warpath' end
@@ -212,12 +157,8 @@ M.plan_to_zone = function (target_zone)
     return p.find_route(cur, target_zone)
 end
 
--- Returns the actor coords in the CURRENT zone the bot should walk
--- to in order to make progress toward `target_zone`.  Use when an
--- activity already knows it wants to leave the current zone but
--- doesn't want to drive the whole multi-hop sequencer -- it just
--- needs "where do I walk next."  Returns nil when no portal is
--- known in the current zone heading toward target.
+-- Returns the actor coords in the current zone to walk to in order to
+-- progress toward `target_zone`.  Returns nil when unknown.
 M.next_hop_actor = function (target_zone)
     local p = plugin()
     if not p or not p.next_hop_actor then return nil end
@@ -227,11 +168,7 @@ M.next_hop_actor = function (target_zone)
     return p.next_hop_actor(cur, target_zone)
 end
 
--- Drop a bookmark at the player's current position.  Caller-named so
--- they can recall it later via the sequencer's walk_to_bookmark step
--- or via WarPathPlugin.bookmark_nearest.  Useful for "I'll be back" --
--- e.g. "I saw the next-floor portal here while I was busy fighting,
--- come back when this room is clear."
+-- Drop a bookmark at the player's current position for later recall.
 M.bookmark_here = function (id, kind, meta)
     local p = plugin()
     if not p or not p.bookmark_add then return false end
@@ -243,19 +180,13 @@ M.bookmark_here = function (id, kind, meta)
     local cur = w and w.get_current_zone_name and w:get_current_zone_name() or nil
     if not cur then return false end
     return p.bookmark_add({
-        id   = id,
-        zone = cur,
-        x    = pp:x(),
-        y    = pp:y(),
-        z    = pp:z(),
-        kind = kind,
-        meta = meta,
+        id = id, zone = cur,
+        x = pp:x(), y = pp:y(), z = pp:z(),
+        kind = kind, meta = meta,
     })
 end
 
--- Recall a bookmarked POI.  `kind` filters to a specific kind of
--- bookmark (e.g. 'pit_floor_portal'); omit for any.  Returns the
--- bookmark table or nil.
+-- Recall the nearest bookmarked POI of the given kind.
 M.bookmark_nearest = function (kind)
     local p = plugin()
     if not p or not p.bookmark_nearest then return nil end
