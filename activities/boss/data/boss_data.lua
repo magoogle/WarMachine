@@ -117,7 +117,6 @@ M.boss_room_anchor = {
 M.chest_patterns = {
     'EGB_Chest',                   -- standard endgame boss chest
     'Boss_WT_Belial_',             -- Belial-specific chest
-    'S12_Prop_Theme_Chest_',       -- Season 12 theme chest (DOOM)
     'Chest_Boss',                  -- generic boss chest fallback
 }
 

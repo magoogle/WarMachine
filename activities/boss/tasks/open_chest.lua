@@ -13,7 +13,7 @@
 -- is_interactable() in Execute.
 --
 -- Reward chest matching covers:
---   EGB_Chest, Chest_Boss, Boss_WT_Belial_*, S12_Prop_Theme_Chest_*
+--   EGB_Chest, Chest_Boss, Boss_WT_Belial_*
 -- (see boss_data.chest_patterns).
 -- ---------------------------------------------------------------------------
 

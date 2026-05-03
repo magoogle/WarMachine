@@ -48,6 +48,17 @@ local DEFAULT_WEIGHT = 100
 -- Tune coefficient to taste; lower = more "go to whatever's closest".
 local DISTANCE_COEFF = 0.5
 
+-- Enemy-kind catalog entries (recorded for navigation hints but not
+-- interact targets).  Blocking them here keeps ghost elites out of the
+-- queue entirely instead of letting them flow through at DEFAULT_WEIGHT
+-- and wasting budget + walk time.
+local EXCLUDED_KINDS = {
+    champion = true,
+    elite    = true,
+    boss     = true,
+    miniboss = true,
+}
+
 -- ---------------------------------------------------------------------------
 -- Helpers
 -- ---------------------------------------------------------------------------
@@ -79,6 +90,8 @@ end
 -- toggled-off, unaffordable), else a numeric score.
 -- ---------------------------------------------------------------------------
 local function score_poi(poi, ctx)
+    if EXCLUDED_KINDS[poi.kind or ''] then return nil end
+
     if ctx.visited[string.format('%s:%d:%d',
         poi.skin or poi.kind or '?',
         math.floor(poi.x or 0),

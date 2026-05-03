@@ -63,15 +63,25 @@ local function plugin()
         or nil
 end
 
+-- True when WarPath gave us a frontier target this tick.  Cleared any time
+-- the plugin is absent, the zone is unsupported, or the frontier is empty
+-- (stats.known == 0 with a full navmesh -- all cells explored).  Used by
+-- pick_ring_dist() to switch to the large ring when WarPath can't lead.
+local wp_frontier_ok = false
+
 -- Returns a vec3 frontier target from WarPath, or nil to fall back.
 local function warpath_frontier(player_pos, cur_zone)
     local p = plugin()
-    if not p or not p.exploration_frontier or not p.exploration_tick then return nil end
+    if not p or not p.exploration_frontier or not p.exploration_tick then
+        wp_frontier_ok = false
+        return nil
+    end
     -- Tick the WarPath explorer so visited cells get marked as we move.
     -- It's idempotent within a single tick so calling here + from
     -- WarPath's own main_pulse doesn't double-count.
     pcall(p.exploration_tick, cur_zone, player_pos)
     local target = p.exploration_frontier(cur_zone, player_pos)
+    wp_frontier_ok = target ~= nil
     return target
 end
 
@@ -107,17 +117,15 @@ local STUCK_DELTA_M  = 0.3       -- min cumulative movement in window (smaller s
 -- RING_DIST_SMALL_M we need this tight.
 local ARRIVE_RADIUS_M     = 0.8
 
--- Decide ring distance for THIS pick.  Probes WarPath status to
--- detect uncharted zones; in uncharted zones we use the large
--- radius to find far-away mobs faster.
+-- Decide ring distance for THIS pick.
+-- Small ring only when WarPath is actively supplying frontier targets --
+-- it handles long-distance routing so our ring just covers the final
+-- approach.  In every other case (no plugin, unsupported zone, frontier
+-- exhausted because stats.known == 0) use the large ring so the bot
+-- can cover ground to find the floor portal or any far-away target.
 local function pick_ring_dist()
-    local p = rawget(_G, 'WarPathPlugin') or rawget(_G, 'StaticPatherPlugin')
-    if not p or not p.get_status then return RING_DIST_SMALL_M end
-    local ok, st = pcall(p.get_status)
-    if ok and st and st.supported == false then
-        return RING_DIST_LARGE_M
-    end
-    return RING_DIST_SMALL_M
+    if wp_frontier_ok then return RING_DIST_SMALL_M end
+    return RING_DIST_LARGE_M
 end
 local DEADEND_PENALTY     = 5.0
 local RECENT_REVISIT_S    = 30.0

@@ -13,6 +13,7 @@ return runner.make({
         'exit',
         'upgrade_glyph',      -- post-boss glyph UI sequence (final floor)
         'floor_portal',       -- descend via PortalSwitch / floor portal
+        'shortcut_portal',    -- Charon's bonus loot room (grab before fighting)
         'kill_monster',       -- main combat loop
         'seek_progression',   -- catalog-driven walk to closest
                               -- unvisited floor-portal / exit-switch

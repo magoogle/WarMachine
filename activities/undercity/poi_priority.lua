@@ -26,6 +26,13 @@ local TYPE_WEIGHT = {
 local DEFAULT_WEIGHT = 80
 local DISTANCE_COEFF = 0.5
 
+local EXCLUDED_KINDS = {
+    champion = true,
+    elite    = true,
+    boss     = true,
+    miniboss = true,
+}
+
 local function dist2_player(poi)
     local lp = get_local_player()
     if not lp then return math.huge end
@@ -41,6 +48,8 @@ local function is_hearth(poi)
 end
 
 local function score_poi(poi, ctx)
+    if EXCLUDED_KINDS[poi.kind or ''] then return nil end
+
     local key = string.format('%s:%d:%d',
         poi.skin or poi.kind or '?',
         math.floor(poi.x or 0),
