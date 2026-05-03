@@ -146,6 +146,7 @@ local EVENT_QUEST_PREFIXES = {
     'le_ambush',        -- LE_Ambush_Standard etc.  (NPC initiation)
     'de_',              -- DE_<EventName>_<Variant>
     'dsq_',             -- DSQ_<zone>_<n>
+    'me_',              -- ME_<EventName> Map Events (campfire, etc.)
     'localevent_',      -- defensive
     'worldevent_',      -- overworld events (mostly helltide, but harmless here)
 }

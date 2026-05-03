@@ -15,6 +15,9 @@ return runner.make({
                               -- in town to open the next dungeon.  No-op
                               -- in WarPlan mode (WarPlan owns transit).
         'exit',               -- TP back to town once boss + chest done.
+        'campfire_event',     -- ACD_ME_* Map Event: walk to + click campfire
+                              -- (or similar) to start the event.  Yields to
+                              -- ambush once the survive phase begins.
         'ambush',             -- LE_Ambush sub-event: speak to survivors,
                               -- hold anchor during waves.
         'cursed_shrine',      -- Click cursed-shrine sub-event when
