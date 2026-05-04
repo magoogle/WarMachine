@@ -179,6 +179,73 @@ M.is_zone_supported = function ()
     return p and p.is_zone_supported and p.is_zone_supported() or false
 end
 
+-- ---------------------------------------------------------------------------
+-- Traversal handling.
+--
+-- The host pathfinder doesn't know about gizmo traversals (rope-climbs,
+-- drop-down ledges, climb-vines, etc.) -- they're not navmesh-walkable so
+-- world:calculate_path() either routes a long way around them or returns
+-- "unreachable."  But WarPath's catalog has them tagged kind='traversal'
+-- with positions and skins, so we can detect when one would help and
+-- click it ourselves.
+--
+-- Strategy: when the bot can't reach the goal via normal pathing (or the
+-- path ends well short of the goal), look for the nearest catalog
+-- traversal that points us closer to the goal.  If we're standing next to
+-- it, find the live actor and interact_object it.  Otherwise route to it.
+-- ---------------------------------------------------------------------------
+local TRAVERSAL_SCAN_RADIUS_M = 25.0   -- only consider traversals within this much
+local PATH_END_SHORT_M        = 8.0    -- path "ends short" if final wp is more than this from goal
+local _live_actor             = nil    -- lazy-loaded core/live_actor
+
+local function live_actor_mod()
+    if not _live_actor then _live_actor = require 'core.live_actor' end
+    return _live_actor
+end
+
+local function nearest_useful_traversal(pp, goal)
+    local p = plugin()
+    if not p or not p.get_actors then return nil end
+    local actors = p.get_actors('traversal')
+    if not actors or #actors == 0 then return nil end
+
+    local px, py = pp:x(), pp:y()
+    local gx, gy = goal:x(), goal:y()
+    local our_to_goal2 = (gx - px) * (gx - px) + (gy - py) * (gy - py)
+    local r2 = TRAVERSAL_SCAN_RADIUS_M * TRAVERSAL_SCAN_RADIUS_M
+
+    local best, best_d2 = nil, math.huge
+    for _, t in ipairs(actors) do
+        local tx, ty = t.x or 0, t.y or 0
+        local dpx, dpy = tx - px, ty - py
+        local d2_player = dpx * dpx + dpy * dpy
+        if d2_player <= r2 then
+            local dgx, dgy = gx - tx, gy - ty
+            local d2_after = dgx * dgx + dgy * dgy
+            if d2_after < our_to_goal2 and d2_player < best_d2 then
+                best, best_d2 = t, d2_player
+            end
+        end
+    end
+    return best
+end
+
+-- If the player is within INTERACT_DIST_M of the catalog traversal, find
+-- its live actor and click it.  Returns true on click, false otherwise.
+local function try_interact_traversal(pp, catalog_t)
+    local dx, dy = (catalog_t.x or 0) - pp:x(), (catalog_t.y or 0) - pp:y()
+    if (dx * dx + dy * dy) > (INTERACT_DIST_M * INTERACT_DIST_M) then return false end
+    local live = live_actor_mod().find(catalog_t, {
+        scan_lists = 'all',     -- traversals live in get_all_actors, not ally
+        match_mode = 'core',    -- catalog skin may lack _Dyn suffix
+        max_dist_sq = 64,
+    })
+    if not live then return false end
+    if live.is_interactable and not live:is_interactable() then return false end
+    interact_object(live)
+    return true
+end
+
 M.to_pos = function (goal, opts)
     -- Accept both signatures:
     --   move.to_pos(goal, { arrive_radius = 3.0, smooth = false })
@@ -206,6 +273,55 @@ M.to_pos = function (goal, opts)
 
     local find_opts = (opts.smooth == false) and { smooth = false } or nil
     local path = cached_find_path(p, pp, goal, find_opts)
+
+    -- Does the path actually reach the goal?  Host pathfinder will route to
+    -- the navmesh edge near a traversal gizmo and stop there, so a path
+    -- ending well short of the goal is a strong hint that a traversal is
+    -- needed.
+    local reaches_goal = false
+    if path and #path > 0 then
+        local end_wp = path[#path]
+        local edx = end_wp:x() - goal:x()
+        local edy = end_wp:y() - goal:y()
+        if (edx * edx + edy * edy) <= (PATH_END_SHORT_M * PATH_END_SHORT_M) then
+            reaches_goal = true
+        end
+    end
+
+    if path and #path > 0 and reaches_goal then
+        local lm = opts.lookahead_m
+        if lm == nil then lm = DEFAULT_LOOKAHEAD end
+        local next_node = lookahead_target(path, pp, lm)
+        if next_node and pathfinder and pathfinder.request_move then
+            pathfinder.request_move(next_node)
+            return 'walking'
+        end
+    end
+
+    -- Path failed or ends short: try to use a catalog traversal to bridge.
+    local trav = nearest_useful_traversal(pp, goal)
+    if trav then
+        if try_interact_traversal(pp, trav) then
+            return 'interacting_traversal'
+        end
+        -- Walk toward the traversal.  Re-enter the pathfinder targeting
+        -- the traversal coords -- the host can usually route to it even
+        -- when it can't reach the final goal.
+        local trav_goal = vec3:new(trav.x, trav.y, trav.z or pp:z())
+        local trav_path = cached_find_path(p, pp, trav_goal, find_opts)
+        if trav_path and #trav_path > 0 then
+            local lm = opts.lookahead_m
+            if lm == nil then lm = DEFAULT_LOOKAHEAD end
+            local next_node = lookahead_target(trav_path, pp, lm)
+            if next_node and pathfinder and pathfinder.request_move then
+                pathfinder.request_move(next_node)
+                return 'walking_to_traversal'
+            end
+        end
+    end
+
+    -- Last resort: even if the path ends short and no traversal helps,
+    -- walking it gets us closer than not moving at all.
     if path and #path > 0 then
         local lm = opts.lookahead_m
         if lm == nil then lm = DEFAULT_LOOKAHEAD end
