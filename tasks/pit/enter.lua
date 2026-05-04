@@ -11,7 +11,7 @@
 -- it works regardless of where the game places the NPC in future patches.
 --
 -- Ported from ArkhamAsylum-1.0.6/tasks/enter_pit.lua, adapted to use D4's
--- built-in walk-on-click for NPC interactions (no Batmobile path-to-NPC).
+-- built-in walk-on-click for NPC interactions.
 -- ---------------------------------------------------------------------------
 
 local settings   = require 'core.settings'

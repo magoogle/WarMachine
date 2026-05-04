@@ -6,9 +6,7 @@
 -- on top of:
 --   * StaticPather merged WarMap data (POI catalog -- chests, pyres, ores,
 --     herbs, shrines, world events) from poi_priority.lua
---   * core/move.lua's 3-tier fallback (D4 click-to-walk -> StaticPather
---     routing -> Batmobile freeroam) so zones with no curated data still
---     run, just less efficiently
+--   * core/move.lua's 2-tier movement (D4 click-to-walk -> WarPath routing)
 --   * core/mount_manager.lua so travel between events gallops on horseback
 --     when the area is clear
 --

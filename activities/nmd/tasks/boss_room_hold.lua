@@ -4,7 +4,7 @@
 -- Once we've spotted the boss, lock the bot inside the arena.  Without this
 -- task the runner falls through to freeroam_fallback every time the boss
 -- briefly leaves the actor stream (invuln phases, leap, summon, teleport,
--- etc.) -- and the Batmobile happily picks a path node OUTSIDE the boss
+-- etc.) -- and the navigation picks a path node OUTSIDE the boss
 -- arena, the bot dashes through the doorway, and the encounter resets.
 --
 -- Reproduction in the live snapshot that motivated this fix:
@@ -18,8 +18,8 @@
 --   * higher priority than freeroam: it claims the pulse first
 --   * lower priority than kill_monster: as soon as a target is up,
 --     kill_monster takes the pulse back and we attack
--- It also actively disables Batmobile freeroam so any momentum from a
--- previous freeroam_fallback pulse stops immediately.
+-- It also clears movement so any momentum from a previous freeroam
+-- pulse stops immediately.
 -- ---------------------------------------------------------------------------
 
 local move    = require 'core.move'

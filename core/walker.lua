@@ -3,12 +3,7 @@
 --
 -- Navigation delegated to WarPath.  The three-tier locomotion driver that
 -- lived here (traversal-gizmo handling, trap escape, evade-based unstick)
--- is replaced by WarPath's host_pather + BatmobilePlugin integration:
---
---   * host_pather.path_to() falls back to BatmobilePlugin.find_long_path
---     when world:calculate_path() returns an empty path.
---   * sequencer.tick() calls BatmobilePlugin.try_traversal_route when
---     stuck after STUCK_RECOVERY_MAX_TRIES, handling climb/door gizmos.
+-- is replaced by WarPath's host_pather + sequencer.
 --
 -- This stub exists so the many pcall(require, 'core.walker') + walker.stop()
 -- call sites in activity apis keep working without modification.  stop()

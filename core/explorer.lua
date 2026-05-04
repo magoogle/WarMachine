@@ -2,9 +2,8 @@
 -- core/explorer.lua
 --
 -- Thin delegate: all exploration state lives in WarPath.
--- WarPath's explorer (core/explorer.lua) owns the visited-cell grid,
--- frontier scoring (wall_dist bias + distance-to-player), and falls back
--- to BatmobilePlugin.get_backtrack when no nav data exists for a zone.
+-- WarPath's explorer (core/explorer.lua) owns the visited-cell grid
+-- and frontier scoring (wall_dist bias + distance-to-player).
 --
 -- This file's only job:
 --   1. Call WarPathPlugin.exploration_tick each pulse to mark visited cells.

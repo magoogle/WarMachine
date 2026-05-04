@@ -311,8 +311,7 @@ task.Execute = function ()
         return
     end
 
-    -- Walk phase: too far, move toward the actor via core.move (which
-    -- now drives the internal walker -- no more direct Batmobile calls).
+    -- Walk phase: too far, move toward the actor via core.move.
     if d > INTERACT_RANGE then
         -- Early-confirm-consumed check.  By CONFIRMED_RANGE_M (8y) the
         -- bot has been "approaching" long enough for D4 to flip

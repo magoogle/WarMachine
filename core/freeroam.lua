@@ -9,8 +9,7 @@
 --
 -- Delegates entirely to core/explorer.lua, which calls WarPath's
 -- exploration_tick + exploration_frontier.  WarPath handles the
--- visited-cell grid, frontier scoring, and BatmobilePlugin.get_backtrack
--- fallback for zones without curated nav data.
+-- visited-cell grid and frontier scoring.
 --
 -- The factory signature is unchanged so per-activity runners need no
 -- updates; the `caller` string appears in the task's status display.

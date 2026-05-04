@@ -175,12 +175,7 @@ end
 -- Force a deactivate of the current activity.  Used when WarMachine itself
 -- gets disabled (main_toggle off) or when the user changes mode.
 --
--- Also stops Batmobile freeroam for ALL warmachine_<tag> callers.  Each
--- activity's freeroam_fallback task calls BatmobilePlugin.enable(caller)
--- with its own caller string ('warmachine_nmd', 'warmachine_helltide',
--- etc.).  Per-activity deactivate() only does clear_target(caller) which
--- leaves Batmobile in "wandering, no goal" -- it'll just batmobile-rove
--- forever after the user turned WarMachine off.  Sweep them all here.
+-- Force a clean stop of all navigation when WarMachine shuts down.
 -- ---------------------------------------------------------------------------
 M.shutdown = function ()
     set_active(nil)

@@ -10,11 +10,9 @@
 --
 --   2. Position-based  -> WarPath (required)
 --      WarPathPlugin.find_path(start, goal) delegates to the host's
---      world:calculate_path() with automatic BatmobilePlugin.find_long_path
---      fallback inside WarPath when the host returns an empty path.
---      Centerline smoothing runs when curated nav data exists for the zone.
---      We feed the next waypoint into pathfinder.request_move and re-plan
---      every pulse.
+--      world:calculate_path().  Centerline smoothing runs when curated
+--      nav data exists for the zone.  We feed the next waypoint into
+--      pathfinder.request_move and re-plan every pulse.
 --
 -- Public API (functions return a status string):
 --
@@ -100,9 +98,7 @@ M.to_pos = function (goal, opts)
     local d = pp:dist_to(goal)
     if d <= arrive then return 'arrived' end
 
-    -- WarPath: find_path delegates to world:calculate_path() with an
-    -- automatic BatmobilePlugin.find_long_path fallback inside WarPath
-    -- when the host pathfinder returns an empty path.
+    -- WarPath: find_path delegates to world:calculate_path().
     local p = plugin()
     if not p or not p.find_path then return 'no_path' end
 

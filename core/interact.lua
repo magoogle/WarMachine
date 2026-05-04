@@ -1,19 +1,12 @@
 -- ---------------------------------------------------------------------------
 -- core/interact.lua
 --
--- Lightweight wrappers for finding actors and clicking them. We deliberately
--- AVOID Batmobile pathfinding for short-range NPC interactions in town:
---   * Batmobile A* fails on NPC origins because they sit on collision tiles
---   * Asking the pathfinder for routes near vendors burns 1000s of frontiers
---     and reports PATHFIND FAILED -- see the [nav] log block in town.
+-- Lightweight wrappers for finding actors and clicking them.
 --
 -- D4's built-in `interact_object(actor)` walks the player the final few
 -- yards on its own, the same way clicking an NPC name in normal play does.
 -- So as long as the actor is in our stream radius, a direct interact_object
--- call is sufficient.
---
--- For long-range movement (cross-zone, dungeon traversal), use Batmobile
--- separately via tasks/warplan/supervisor.lua.
+-- call is sufficient.  For long-range movement use core/move.lua.
 -- ---------------------------------------------------------------------------
 
 local interact = {}

@@ -11,8 +11,7 @@
 --   1. While in PIT_* and Gizmo_Paragon_Glyph_Upgrade is in stream:
 --      mark glyph_gizmo_seen, do nothing (ArkhamAsylum handles upgrade).
 --   2. When ArkhamAsylumPlugin.is_glyph_done() returns true:
---      hard-disable Batmobile (so it stops drifting during the map+tp
---      sequence), disable ArkhamAsylum, fire Next-Obj, reset state.
+--      disable ArkhamAsylum, fire Next-Obj, reset state.
 --
 -- Why we wait on is_glyph_done() instead of "gizmo despawned":
 --   The actor stream can briefly drop the gizmo during ArkhamAsylum's
@@ -81,9 +80,7 @@ task.Execute = function ()
     end
 
     -- Both signals confirm: upgrade complete.
-    -- Take over: hard-disable Batmobile (pause is futile -- main.lua's
-    -- freeroam loop unconditionally unpauses it), disable ArkhamAsylum,
-    -- fire Next-Obj.
+    -- Take over: disable ArkhamAsylum, fire Next-Obj.
     if tracker.warplan.active_sub_plugin then
         if ArkhamAsylumPlugin and ArkhamAsylumPlugin.disable then
             console.print('[WarMachine] pit: glyph upgrade complete -- disabling ArkhamAsylum')

@@ -14,8 +14,7 @@
 --
 -- Frontier sources, in preference order:
 --   1. WarPath explorer.next_frontier (nav cell data exists)
---   2. Batmobile get_backtrack         (live DFS scanner)
---   3. Nothing -- task reports 'fully explored', bot falls to idle
+--   2. Nothing -- task reports 'fully explored', bot falls to idle
 -- ---------------------------------------------------------------------------
 
 local move    = require 'core.move'
@@ -52,12 +51,7 @@ end
 local function pick_frontier(zone, pp)
     local p = warpath()
     if p and p.exploration_frontier then
-        local t = p.exploration_frontier(zone, pp)
-        if t then return t end
-    end
-    if BatmobilePlugin then
-        local ok, bt = pcall(BatmobilePlugin.get_backtrack, 'helltide')
-        if ok and type(bt) == 'table' and #bt > 0 then return bt[#bt] end
+        return p.exploration_frontier(zone, pp)
     end
     return nil
 end

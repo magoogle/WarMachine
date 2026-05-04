@@ -44,9 +44,7 @@ settings.update_settings = function ()
     -- Read run mode from the dropdown.
     settings.mode = mode.from_index(gui.elements.mode_select:get())
 
-    -- Gate enable on the (now-much-shorter) hard-required dependency list.
-    -- Currently only Batmobile is required; everything else is internal or
-    -- optional.
+    -- Gate enable on the hard-required dependency list.
     if toggle_state and not gui.has_all_dependencies() then
         if not _logged_dep_warning then
             local missing = gui.get_missing_dependencies()

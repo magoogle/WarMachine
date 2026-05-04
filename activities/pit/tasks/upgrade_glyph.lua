@@ -6,7 +6,7 @@
 -- upgradable glyph until none remain (tracker.glyph_done = true).
 --
 -- Ported from ArkhamAsylum/tasks/upgrade_glyph.lua.  Differences:
---   * BatmobilePlugin movement replaced with move.to_actor (D4 click-walk)
+--   * Uses move.to_actor (D4 click-walk) for movement
 --   * Per-glyph blacklist + failed-count logic preserved verbatim --
 --     can_upgrade() is bugged for level-45 glyphs; the original retry
 --     handling avoids spinning forever.

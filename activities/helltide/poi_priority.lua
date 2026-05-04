@@ -170,7 +170,7 @@ end
 --   maiden_active  bool -- true while the maiden event is going
 --
 -- Returns: array of POI tables, sorted by score descending.  Empty array
--- if StaticPather has no data for this zone (caller falls back to Batmobile).
+-- if WarPath has no catalog data for this zone.
 -- ---------------------------------------------------------------------------
 M.build = function (tracker, settings, maiden_active)
     -- Use cache if fresh; rebuilding every pulse churns

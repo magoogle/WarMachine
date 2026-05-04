@@ -29,14 +29,10 @@ local gui = {}
 -- ---------------------------------------------------------------------------
 -- External dependencies that stay separate from WarMachine.  These are
 -- generic libraries the bot uses but doesn't own:
---   * Batmobile     -- navigation library used as fallback when StaticPather
---                      has no map data for the current zone
---   * StaticPather  -- consumes WarMap merged data + the host pathfinder
+--   * WarPath (or StaticPather) -- navigation: pathfinding, exploration,
+--                                  cross-zone travel via host pathfinder
 --   * AlfredTheButler -- inventory/town management (optional)
---   * Looteer       -- loot pickup (optional)
--- WarPath is required for all navigation (pathfinding, exploration, cross-zone
--- travel).  It integrates BatmobilePlugin internally as a fallback when the
--- host pathfinder returns an empty path.
+--   * Looteer         -- loot pickup (optional)
 -- Alfred + Looteer are nice-to-haves; WarMachine still runs without them.
 -- ---------------------------------------------------------------------------
 local REQUIRED_PLUGINS = {
@@ -314,12 +310,8 @@ gui.elements = {
 gui.render = function ()
     if not gui.elements.main_tree:push('WarMachine v' .. plugin_version .. ' by Magoogle') then return end
 
-    -- Dependency check banner. Block of red-text headers naming each
-    -- missing sub-plugin folder. The master toggle is force-disabled in
-    -- WarMachine is now self-contained for the activities; only Batmobile
-    -- is hard-required (used as fallback navigator for zones with no merged
-    -- WarMap data).  Show a soft warning for missing optional integrations
-    -- (StaticPather/Alfred/Looteer) but don't block the master toggle.
+    -- Dependency check banner: block of red-text headers naming each
+    -- missing required plugin (currently only WarPath).
     local missing = get_missing_dependencies()
     if #missing > 0 then
         render_menu_header('==========================================================')
@@ -327,7 +319,7 @@ gui.render = function ()
         for _, folder in ipairs(missing) do
             render_menu_header('    * ' .. folder)
         end
-        render_menu_header('  Install Batmobile in scripts/ then re-enable WarMachine.')
+        render_menu_header('  Install WarPath in scripts/ then re-enable WarMachine.')
         render_menu_header('==========================================================')
     end
     -- Soft warnings for optional integrations.  WarPath / StaticPather
@@ -378,7 +370,7 @@ gui.render = function ()
     end
 
     if gui.elements.helltide_tree:push('Helltide settings') then
-        render_menu_header('What to do during a helltide hour. POI selection drives off StaticPather merged WarMap data + falls back to Batmobile freeroam when none is available.')
+        render_menu_header('What to do during a helltide hour. POI selection drives off WarPath merged WarMap data; the explore task wanders the zone when no POI is queued.')
         gui.elements.helltide_do_chests:render('Open Tortured Gifts + Helltide chests',
             'Spend cinders on rare chests; open free helltide reward chests')
         gui.elements.helltide_do_silent_chests:render('Open Silent chests',
