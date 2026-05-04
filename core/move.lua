@@ -65,6 +65,45 @@ local DEFAULT_ARRIVE   = 3.0
 local DEFAULT_LOOKAHEAD = 8.0   -- meters ahead on the path to target; creates
                                  -- smooth curves instead of sharp angle changes
 
+-- ---------------------------------------------------------------------------
+-- Path cache.  move.to_pos is called every pulse the bot is moving; without
+-- this cache each call recomputes the host pathfinder (~60 A* runs/sec per
+-- active task = the dominant lag source).  The runner only drives ONE task
+-- per pulse so a single slot suffices; the goal-coord check evicts on
+-- target change.
+-- ---------------------------------------------------------------------------
+local PATH_CACHE_TTL_S = 0.5    -- re-plan after this much wall time
+local GOAL_TOLERANCE_M = 1.5    -- re-plan if goal coords moved more than this
+local _path_cache = {
+    goal_x = nil, goal_y = nil,
+    smooth = nil,
+    path = nil,
+    computed_at = -math.huge,
+}
+
+local function cached_find_path(p, pp, goal, find_opts)
+    local now = (get_time_since_inject and get_time_since_inject()) or 0
+    local gx, gy = goal:x(), goal:y()
+    local smooth = not (find_opts and find_opts.smooth == false)
+    local c = _path_cache
+    if c.path and c.goal_x and c.smooth == smooth then
+        local dx = c.goal_x - gx
+        local dy = c.goal_y - gy
+        if (dx * dx + dy * dy) <= (GOAL_TOLERANCE_M * GOAL_TOLERANCE_M)
+           and (now - c.computed_at) < PATH_CACHE_TTL_S then
+            return c.path
+        end
+    end
+    local path = p.find_path(pp, goal, find_opts)
+    if path and #path > 0 then
+        c.goal_x, c.goal_y = gx, gy
+        c.smooth = smooth
+        c.path = path
+        c.computed_at = now
+    end
+    return path
+end
+
 -- Convert any of (vec3, {x=,y=,z=}, {1,2,3}) into a vec3 anchored to the
 -- player's z if the input doesn't carry one.
 local function to_vec3(g, fallback_z)
@@ -132,7 +171,7 @@ M.to_pos = function (goal, opts)
     if not p or not p.find_path then return 'no_path' end
 
     local find_opts = (opts.smooth == false) and { smooth = false } or nil
-    local path = p.find_path(pp, goal, find_opts)
+    local path = cached_find_path(p, pp, goal, find_opts)
     if path and #path > 0 then
         local lm = opts.lookahead_m
         if lm == nil then lm = DEFAULT_LOOKAHEAD end
@@ -163,6 +202,9 @@ M.clear = function (_caller)
     if pathfinder and pathfinder.clear_stored_path then
         pcall(pathfinder.clear_stored_path)
     end
+    _path_cache.path = nil
+    _path_cache.goal_x = nil
+    _path_cache.goal_y = nil
 end
 
 -- ---------------------------------------------------------------------------
