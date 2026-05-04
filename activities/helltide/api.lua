@@ -4,11 +4,9 @@
 -- WarMachine helltide activity entry point.  Replaces the legacy 2,000-line
 -- HelltideRevamped plugin with a thin wrapper that drives a small task list
 -- on top of:
---   * StaticPather merged WarMap data (POI catalog -- chests, pyres, ores,
---     herbs, shrines, world events) from poi_priority.lua
+--   * WarPath catalog (POI -- chests, pyres, ores, herbs, shrines, world
+--     events) read via WarPathPlugin.get_actors() from poi_priority.lua
 --   * core/move.lua's 2-tier movement (D4 click-to-walk -> WarPath routing)
---   * core/mount_manager.lua so travel between events gallops on horseback
---     when the area is clear
 --
 -- Activity contract per activities/_template/api.lua.
 -- ---------------------------------------------------------------------------
@@ -19,8 +17,7 @@ local tracker       = require 'activities.helltide.tracker'
 local runner        = require 'activities.helltide.tasks.runner'
 local quest_state   = require 'activities.helltide.quest_state'
 
-local core_mode    = require 'core.mode'
-local core_tracker = require 'core.tracker'
+local core_mode = require 'core.mode'
 
 local M = {}
 
@@ -75,27 +72,13 @@ end
 M.pulse = function ()
     settings_mod.update()
 
-    -- Mount management runs every pulse and self-throttles via cooldown.
-    -- "allow_mount" gates on whether the current task is travel-flavored
-    -- (interact_poi, return_to_zone) vs interaction (farm_chest, maiden).
-    --
-    -- Force-dismount AND suppress mounting whenever a WarPlan transit
-    -- sequence is in flight (Tab+click teleport, vendor menu, NPC click,
-    -- turn-in).  Without this, mount_manager fires Z in the same pulse
-    -- that test_next_obj sends Tab/click, the keystrokes collide, and
-    -- the teleport silently drops.
-    local current = tracker.current_task or {}
-    local travel_state = (current.name == 'interact_poi' or current.name == 'return_to_zone')
-    local wp = core_tracker.warplan
-    local wp_pending = wp.next_obj.pending
-                    or wp.test.pending
-                    or wp.turn_in.pending
-                    or wp.start_cycle.pending
-    mount_manager.update({
-        disabled       = not settings_mod.auto_mount,
-        allow_mount    = travel_state and not wp_pending,
-        force_dismount = wp_pending,
-    })
+    -- Mount management: never auto-mount.  pathfinder.request_move (which
+    -- drives WarPath-routed movement) doesn't navigate a mounted player,
+    -- so mounting up freezes the bot in place.  Auto-dismount-on-enemy
+    -- still runs as a safety in case the player manually mounts; that's
+    -- handled by passing allow_mount=false (rather than disabled=true,
+    -- which would short-circuit dismount too).
+    mount_manager.update({ allow_mount = false, force_dismount = true })
 
     runner.pulse()
 end
