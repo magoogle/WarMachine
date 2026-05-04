@@ -16,6 +16,7 @@ local settings_mod  = require 'activities.helltide.settings'
 local tracker       = require 'activities.helltide.tracker'
 local runner        = require 'activities.helltide.tasks.runner'
 local quest_state   = require 'activities.helltide.quest_state'
+local move          = require 'core.move'
 
 local core_mode = require 'core.mode'
 
@@ -81,6 +82,7 @@ M.pulse = function ()
     mount_manager.update({ allow_mount = false, force_dismount = true })
 
     runner.pulse()
+    move.tick()
 end
 
 M.get_status = function ()
@@ -110,10 +112,9 @@ M.activate = function ()
 end
 
 M.deactivate = function ()
-    -- Clear any in-flight walker target so we don't keep walking into
+    -- Clear any in-flight Batmobile target so we don't keep walking into
     -- a wall after WarMachine moves to a different activity.
-    local ok, walker = pcall(require, 'core.walker')
-    if ok and walker and walker.stop then walker.stop() end
+    move.clear()
     tracker.farm_target = nil
     tracker.in_maiden   = false
 end

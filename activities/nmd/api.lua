@@ -4,6 +4,7 @@ local mount_manager = require 'core.mount_manager'
 local settings_mod  = require 'activities.nmd.settings'
 local tracker       = require 'activities.nmd.tracker'
 local runner        = require 'activities.nmd.tasks.runner'
+local move          = require 'core.move'
 
 local core_mode     = require 'core.mode'
 local zone          = require 'core.zone'
@@ -31,6 +32,10 @@ M.pulse = function ()
     -- density makes mount churn a net loss.  Only Helltide uses auto-mount.
     mount_manager.update({ disabled = true, allow_mount = false })
     runner.pulse()
+    -- Drive Batmobile's pathfind/replan/move loop.  move.to_pos already
+    -- ticks force=true on its own pulse; this catches the no-new-target
+    -- case so an active path keeps stepping.
+    move.tick()
 end
 
 M.get_status = function ()
@@ -57,10 +62,9 @@ M.activate = function ()
 end
 
 M.deactivate = function ()
-    -- Stop any in-flight walker target so the player doesn't keep
-    -- walking when we transition activities or shut down.
-    local ok, walker = pcall(require, 'core.walker')
-    if ok and walker and walker.stop then walker.stop() end
+    -- Stop any in-flight movement so the player doesn't keep walking when
+    -- we transition activities or shut down.
+    move.clear()
 end
 
 return M

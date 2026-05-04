@@ -4,6 +4,7 @@ local mount_manager = require 'core.mount_manager'
 local settings_mod  = require 'activities.hordes.settings'
 local tracker       = require 'activities.hordes.tracker'
 local runner        = require 'activities.hordes.tasks.runner'
+local move          = require 'core.move'
 
 local M = {}
 
@@ -29,6 +30,7 @@ M.pulse = function ()
     -- always a net loss here.  Only Helltide uses auto-mount.
     mount_manager.update({ disabled = true, allow_mount = false })
     runner.pulse()
+    move.tick()
 end
 
 M.get_status = function ()
@@ -54,8 +56,7 @@ M.activate = function ()
 end
 
 M.deactivate = function ()
-    local ok, walker = pcall(require, 'core.walker')
-    if ok and walker and walker.stop then walker.stop() end
+    move.clear()
 end
 
 return M

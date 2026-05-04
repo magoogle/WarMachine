@@ -10,6 +10,7 @@ local mount_manager = require 'core.mount_manager'
 local settings_mod  = require 'activities.pit.settings'
 local tracker       = require 'activities.pit.tracker'
 local runner        = require 'activities.pit.tasks.runner'
+local move          = require 'core.move'
 
 local M = {}
 
@@ -49,6 +50,7 @@ M.pulse = function ()
     mount_manager.update({ disabled = true, allow_mount = false })
 
     runner.pulse()
+    move.tick()
 end
 
 M.get_status = function ()
@@ -75,8 +77,7 @@ M.activate = function ()
 end
 
 M.deactivate = function ()
-    local ok, walker = pcall(require, 'core.walker')
-    if ok and walker and walker.stop then walker.stop() end
+    move.clear()
 end
 
 return M

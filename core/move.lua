@@ -1,28 +1,33 @@
 -- ---------------------------------------------------------------------------
--- core/move.lua  --  Two-tier movement primitive.
+-- core/move.lua  --  Batmobile-driven movement primitive.
 --
--- Activity tasks call into this instead of directly invoking pathfinder
--- or WarPath.  Two tiers in priority order:
+-- Activity tasks call into this instead of touching BatmobilePlugin / WarPath
+-- directly.  Two tiers in priority order:
 --
 --   1. Actor in stream  -> interact_object(actor)
---      D4's native click-to-walk.  Works for any actor in actors_manager,
---      regardless of distance.
+--      D4's native click-to-walk.  Works for any actor in actors_manager;
+--      D4 walks the player the last few yards on its own.
 --
---   2. Position-based  -> WarPath (required)
---      WarPathPlugin.find_path(start, goal) delegates to the host's
---      world:calculate_path().  Centerline smoothing runs when curated
---      nav data exists for the zone.  We feed the next waypoint into
---      pathfinder.request_move and re-plan every pulse.
+--   2. Position-based  -> Batmobile (BatmobilePlugin.set_target)
+--      Batmobile owns scene-aware pathfinding for dungeons/pits/undercity
+--      where WarPath's overworld nav data doesn't apply.  Each pulse the
+--      activity's pulse() must call move.tick() to drive Batmobile's
+--      update + move loop -- that's the heartbeat.
 --
--- Public API (functions return a status string):
+-- WarPath is intentionally NOT used here for path planning.  WarPath stays
+-- for catalog-lookup helpers (cross-zone routing, get_actors), but the
+-- actual walking is Batmobile's job in every zone type.
 --
---   move.to_actor(actor)                   -- tier 1: click-to-walk
---   move.to_pos(goal, opts)                -- tier 2: WarPath pathfinding
+-- Public API:
+--
+--   move.to_actor(actor)                -- tier 1: click-to-walk
+--   move.to_pos(goal, opts)             -- tier 2: Batmobile pathfind
 --   move.to_actor_or_pos(actor, pos, opts)
---   move.is_zone_supported()               -- bool: WarPath has curated data here
---   move.clear()                           -- stop any in-flight movement
+--   move.tick(force?)                   -- per-pulse heartbeat for Batmobile
+--   move.clear()                        -- stop, drop target
+--   move.is_done()                      -- true when Batmobile reached goal
 --
--- Cross-zone helpers (delegates to WarPathPlugin):
+-- Cross-zone helpers (catalog data; delegates to WarPathPlugin):
 --   move.plan_to_zone(target_zone)
 --   move.next_hop_actor(target_zone)
 --   move.bookmark_here(id, kind?, meta?)
@@ -31,113 +36,32 @@
 
 local M = {}
 
--- ---------------------------------------------------------------------------
--- Plugin reference resolver.  Accepts both WarPathPlugin (current name)
--- and StaticPatherPlugin (legacy alias) so bundles in transition keep working.
--- ---------------------------------------------------------------------------
-local function plugin()
+local CALLER = 'warmachine'
+
+-- Throttle Batmobile's update+move to 10fps.  Batmobile has its own 50ms
+-- internal pacing; ticking at 60fps just runs it every call and burns
+-- CPU.  Mirrors HelltideRevamped's bm_pulse cadence.  Pass force=true
+-- right after set_target so the new path starts immediately.
+local BM_TICK_INTERVAL = 0.1
+local _last_tick_t     = -math.huge
+
+-- Track the active target so move.to_pos calls with the same destination
+-- skip redundant set_target work.
+local _active_target = nil
+
+-- Long-path threshold: targets farther than this default to
+-- BatmobilePlugin.navigate_long_path which uses uncapped (300ms-capped)
+-- A* and is the only reliable way to route across rooms in pits/undercity.
+local LONG_PATH_THRESHOLD_M = 60.0
+
+local function batmobile()
+    return rawget(_G, 'BatmobilePlugin')
+end
+
+local function warpath()
     return rawget(_G, 'WarPathPlugin')
         or rawget(_G, 'StaticPatherPlugin')
         or nil
-end
-
--- ---------------------------------------------------------------------------
--- Tier 1: D4 native click-to-walk via interact_object, with a long-range
--- escape hatch that delegates to WarPath routing.
---
--- interact_object() is the right call for short distances: D4 walks the
--- character the final few yards using its own click-to-walk handler.  But
--- for long distances it tries to walk in a straight line with no terrain
--- awareness -- the bot walks into cliffs / walls / closed doors.
---
--- When the actor is more than INTERACT_DIST_M away we route via to_pos so
--- the host pathfinder respects terrain; once close we fall back to
--- interact_object for the final approach.  If WarPath has no nav data for
--- the zone (to_pos returns 'no_path') we fall back to interact_object
--- anyway as a last resort.
--- ---------------------------------------------------------------------------
-local INTERACT_DIST_M = 6.0
-
-M.to_actor = function (actor, opts)
-    if not actor or not actor.get_position then return 'no_actor' end
-    local lp = get_local_player()
-    if not lp then return 'no_actor' end
-
-    local pp = lp:get_position()
-    local ap = actor:get_position()
-    if not pp or not ap then
-        interact_object(actor)
-        return 'interacted'
-    end
-
-    local dx = ap:x() - pp:x()
-    local dy = ap:y() - pp:y()
-    if (dx * dx + dy * dy) <= INTERACT_DIST_M * INTERACT_DIST_M then
-        interact_object(actor)
-        return 'interacted'
-    end
-
-    -- Long range: route via WarPath so cliffs/walls/doors are respected.
-    local r = M.to_pos(ap, opts)
-    if r == 'no_path' then
-        interact_object(actor)
-        return 'interacted'
-    end
-    return r
-end
-
--- ---------------------------------------------------------------------------
--- Tier 2: position-based movement via WarPath.
---
--- opts.arrive_radius  -- meters; default 3
--- opts.smooth         -- bool, default true: run centerline smoothing on the
---                        WarPath path.  Set false for exit-precision moves
---                        where hugging the wall is actually the goal (stepping
---                        ONTO a portal switch).
--- ---------------------------------------------------------------------------
-local DEFAULT_ARRIVE   = 3.0
-local DEFAULT_LOOKAHEAD = 8.0   -- meters ahead on the path to target; creates
-                                 -- smooth curves instead of sharp angle changes
-
--- ---------------------------------------------------------------------------
--- Path cache.  move.to_pos is called every pulse the bot is moving; without
--- this cache each call recomputes the host pathfinder (~60 A* runs/sec per
--- active task = the dominant lag source).  The runner only drives ONE task
--- per pulse so a single slot suffices; the goal-coord check evicts on
--- target change.
--- ---------------------------------------------------------------------------
-local PATH_CACHE_TTL_S    = 0.5     -- re-plan after this much wall time
-local GOAL_TOLERANCE_M    = 1.5     -- re-plan if goal coords moved more than this
-local TELEPORT_THRESHOLD_M = 15.0   -- player position jump > this counts as a teleport
-local _path_cache = {
-    goal_x = nil, goal_y = nil,
-    smooth = nil,
-    path = nil,
-    computed_at = -math.huge,
-}
-local _last_player_pos = nil   -- {x, y} from last pulse; used for teleport detection
-
-local function cached_find_path(p, pp, goal, find_opts)
-    local now = (get_time_since_inject and get_time_since_inject()) or 0
-    local gx, gy = goal:x(), goal:y()
-    local smooth = not (find_opts and find_opts.smooth == false)
-    local c = _path_cache
-    if c.path and c.goal_x and c.smooth == smooth then
-        local dx = c.goal_x - gx
-        local dy = c.goal_y - gy
-        if (dx * dx + dy * dy) <= (GOAL_TOLERANCE_M * GOAL_TOLERANCE_M)
-           and (now - c.computed_at) < PATH_CACHE_TTL_S then
-            return c.path
-        end
-    end
-    local path = p.find_path(pp, goal, find_opts)
-    if path and #path > 0 then
-        c.goal_x, c.goal_y = gx, gy
-        c.smooth = smooth
-        c.path = path
-        c.computed_at = now
-    end
-    return path
 end
 
 -- Convert any of (vec3, {x=,y=,z=}, {1,2,3}) into a vec3 anchored to the
@@ -149,118 +73,39 @@ local function to_vec3(g, fallback_z)
     return g   -- already a vec3
 end
 
--- ---------------------------------------------------------------------------
--- Pure-pursuit lookahead: walk along path segments from the player's
--- current position and return the point exactly `lookahead_m` meters
--- ahead.  When the lookahead distance exceeds the remaining path length
--- the final waypoint (the goal) is returned, so precise arrival is
--- preserved at close range.
--- ---------------------------------------------------------------------------
-local function lookahead_target(path, player_pos, lookahead_m)
-    if not path or #path == 0 then return nil end
-    if #path == 1 or lookahead_m <= 0 then return path[#path] end
-    local remaining = lookahead_m
-    local px, py, pz = player_pos:x(), player_pos:y(), player_pos:z()
-    for i = 1, #path do
-        local wp = path[i]
-        local wx, wy, wz = wp:x(), wp:y(), wp:z()
-        local dx, dy = wx - px, wy - py
-        local seg_len = math.sqrt(dx * dx + dy * dy)
-        if seg_len >= remaining then
-            local t = remaining / seg_len
-            return vec3:new(px + dx * t, py + dy * t, pz + (wz - pz) * t)
-        end
-        remaining = remaining - seg_len
-        px, py, pz = wx, wy, wz
-    end
-    return path[#path]
+local function targets_match(a, b)
+    if not a or not b then return false end
+    return math.abs(a:x() - b:x()) < 0.5
+       and math.abs(a:y() - b:y()) < 0.5
 end
+
+-- ---------------------------------------------------------------------------
+-- Tier 1: D4 native click-to-walk via interact_object.
+-- ---------------------------------------------------------------------------
+M.to_actor = function (actor)
+    if not actor then return 'no_actor' end
+    if not actor.get_position then return 'no_actor' end
+    if not get_local_player() then return 'no_actor' end
+    interact_object(actor)
+    return 'interacted'
+end
+
+-- ---------------------------------------------------------------------------
+-- Tier 2: position-based movement via Batmobile.
+--
+-- opts.arrive_radius  -- meters; default 3
+-- opts.long_path      -- bool: force navigate_long_path (uncapped A*).
+--                        Auto-engaged when goal is > LONG_PATH_THRESHOLD_M.
+-- ---------------------------------------------------------------------------
+local DEFAULT_ARRIVE = 3.0
 
 M.is_zone_supported = function ()
-    local p = plugin()
-    return p and p.is_zone_supported and p.is_zone_supported() or false
-end
-
--- ---------------------------------------------------------------------------
--- Traversal handling.
---
--- The host pathfinder doesn't know about gizmo traversals (rope-climbs,
--- drop-down ledges, climb-vines, etc.) -- they're not navmesh-walkable so
--- world:calculate_path() either routes a long way around them or returns
--- "unreachable."  But WarPath's catalog has them tagged kind='traversal'
--- with positions and skins, so we can detect when one would help and
--- click it ourselves.
---
--- Strategy: when the bot can't reach the goal via normal pathing (or the
--- path ends well short of the goal), look for the nearest catalog
--- traversal that points us closer to the goal.  If we're standing next to
--- it, find the live actor and interact_object it.  Otherwise route to it.
--- ---------------------------------------------------------------------------
-local TRAVERSAL_SCAN_RADIUS_M       = 25.0   -- only consider traversals within this much
-local PATH_END_SHORT_M              = 8.0    -- path "ends short" if final wp is more than this from goal
-local TRAVERSAL_INTERACT_COOLDOWN_S = 4.0    -- don't re-click another traversal within this much
-local _live_actor                   = nil    -- lazy-loaded core/live_actor
-local _last_traversal_interact_t    = -math.huge
-
-local function live_actor_mod()
-    if not _live_actor then _live_actor = require 'core.live_actor' end
-    return _live_actor
-end
-
-local function nearest_useful_traversal(pp, goal)
-    local p = plugin()
-    if not p or not p.get_actors then return nil end
-    local actors = p.get_actors('traversal')
-    if not actors or #actors == 0 then return nil end
-
-    local px, py = pp:x(), pp:y()
-    local gx, gy = goal:x(), goal:y()
-    local our_to_goal2 = (gx - px) * (gx - px) + (gy - py) * (gy - py)
-    local r2 = TRAVERSAL_SCAN_RADIUS_M * TRAVERSAL_SCAN_RADIUS_M
-
-    local best, best_d2 = nil, math.huge
-    for _, t in ipairs(actors) do
-        local tx, ty = t.x or 0, t.y or 0
-        local dpx, dpy = tx - px, ty - py
-        local d2_player = dpx * dpx + dpy * dpy
-        if d2_player <= r2 then
-            local dgx, dgy = gx - tx, gy - ty
-            local d2_after = dgx * dgx + dgy * dgy
-            if d2_after < our_to_goal2 and d2_player < best_d2 then
-                best, best_d2 = t, d2_player
-            end
-        end
-    end
-    return best
-end
-
--- If the player is within INTERACT_DIST_M of the catalog traversal, find
--- its live actor and click it.  Returns true on click, false otherwise.
--- Cooled-down so we can't immediately re-click the same gizmo we just used
--- (e.g. the entrance portal we just came through).
-local function try_interact_traversal(pp, catalog_t)
-    local dx, dy = (catalog_t.x or 0) - pp:x(), (catalog_t.y or 0) - pp:y()
-    if (dx * dx + dy * dy) > (INTERACT_DIST_M * INTERACT_DIST_M) then return false end
-    local now = (get_time_since_inject and get_time_since_inject()) or 0
-    if (now - _last_traversal_interact_t) < TRAVERSAL_INTERACT_COOLDOWN_S then
-        return false
-    end
-    local live = live_actor_mod().find(catalog_t, {
-        scan_lists = 'all',     -- traversals live in get_all_actors, not ally
-        match_mode = 'core',    -- catalog skin may lack _Dyn suffix
-        max_dist_sq = 64,
-    })
-    if not live then return false end
-    if live.is_interactable and not live:is_interactable() then return false end
-    interact_object(live)
-    _last_traversal_interact_t = now
-    return true
+    -- Batmobile pathfinds wherever the host pathfinder works -- effectively
+    -- "everywhere."  Kept as a stub for callers that still ask.
+    return batmobile() ~= nil
 end
 
 M.to_pos = function (goal, opts)
-    -- Accept both signatures:
-    --   move.to_pos(goal, { arrive_radius = 3.0, smooth = false })
-    --   move.to_pos(goal, 3.0)   -- legacy: number = arrive radius
     if type(opts) == 'number' then
         opts = { arrive_radius = opts }
     elseif opts == nil then
@@ -272,133 +117,118 @@ M.to_pos = function (goal, opts)
     local pp = lp:get_position()
     if not pp then return 'no_path' end
 
-    -- Teleport detection.  When the player jumps far between pulses (zone
-    -- change, town portal, sigil TP, death + respawn) the host pathfinder's
-    -- stored request_move and our path cache are both pointing at coords
-    -- that may now lie inside walls.  Wipe both, skip this pulse so the
-    -- host's nav state can settle, and let the next pulse re-plan fresh.
-    if _last_player_pos then
-        local jx = pp:x() - _last_player_pos.x
-        local jy = pp:y() - _last_player_pos.y
-        if (jx * jx + jy * jy) > (TELEPORT_THRESHOLD_M * TELEPORT_THRESHOLD_M) then
-            _path_cache.path = nil
-            _path_cache.goal_x, _path_cache.goal_y = nil, nil
-            if pathfinder and pathfinder.clear_stored_path then
-                pcall(pathfinder.clear_stored_path)
-            end
-            _last_player_pos = { x = pp:x(), y = pp:y() }
-            return 'teleport_settle'
-        end
-    end
-    _last_player_pos = { x = pp:x(), y = pp:y() }
-
     goal = to_vec3(goal, pp:z())
     if not goal then return 'no_path' end
 
     local d = pp:dist_to(goal)
-    if d <= arrive then return 'arrived' end
-
-    -- WarPath: find_path delegates to world:calculate_path().
-    local p = plugin()
-    if not p or not p.find_path then return 'no_path' end
-
-    local find_opts = (opts.smooth == false) and { smooth = false } or nil
-    local path = cached_find_path(p, pp, goal, find_opts)
-
-    -- Does the path actually reach the goal?  Host pathfinder will route to
-    -- the navmesh edge near a traversal gizmo and stop there, so a path
-    -- ending well short of the goal is a strong hint that a traversal is
-    -- needed.
-    local reaches_goal = false
-    if path and #path > 0 then
-        local end_wp = path[#path]
-        local edx = end_wp:x() - goal:x()
-        local edy = end_wp:y() - goal:y()
-        if (edx * edx + edy * edy) <= (PATH_END_SHORT_M * PATH_END_SHORT_M) then
-            reaches_goal = true
+    if d <= arrive then
+        if _active_target and targets_match(_active_target, goal) then
+            M.clear()
         end
+        return 'arrived'
     end
 
-    if path and #path > 0 and reaches_goal then
-        local lm = opts.lookahead_m
-        if lm == nil then lm = DEFAULT_LOOKAHEAD end
-        local next_node = lookahead_target(path, pp, lm)
-        if next_node and pathfinder and pathfinder.request_move then
-            pathfinder.request_move(next_node)
-            return 'walking'
-        end
+    local bm = batmobile()
+    if not bm or not bm.set_target then return 'no_path' end
+
+    -- Same destination, target still active -> just drive the next step.
+    if _active_target and targets_match(_active_target, goal) then
+        M.tick(true)
+        return 'walking'
     end
 
-    -- Path failed or ends short: try to use a catalog traversal to bridge.
-    local trav = nearest_useful_traversal(pp, goal)
-    if trav then
-        if try_interact_traversal(pp, trav) then
-            return 'interacting_traversal'
+    local accepted
+    if opts.long_path or d > LONG_PATH_THRESHOLD_M then
+        if bm.navigate_long_path then
+            accepted = bm.navigate_long_path(CALLER, goal)
+        else
+            accepted = bm.set_target(CALLER, goal, false)
         end
-        -- Walk toward the traversal.  Re-enter the pathfinder targeting
-        -- the traversal coords -- the host can usually route to it even
-        -- when it can't reach the final goal.
-        local trav_goal = vec3:new(trav.x, trav.y, trav.z or pp:z())
-        local trav_path = cached_find_path(p, pp, trav_goal, find_opts)
-        if trav_path and #trav_path > 0 then
-            local lm = opts.lookahead_m
-            if lm == nil then lm = DEFAULT_LOOKAHEAD end
-            local next_node = lookahead_target(trav_path, pp, lm)
-            if next_node and pathfinder and pathfinder.request_move then
-                pathfinder.request_move(next_node)
-                return 'walking_to_traversal'
-            end
-        end
+    else
+        accepted = bm.set_target(CALLER, goal, false)
     end
 
-    -- Last resort: even if the path ends short and no traversal helps,
-    -- walking it gets us closer than not moving at all.
-    if path and #path > 0 then
-        local lm = opts.lookahead_m
-        if lm == nil then lm = DEFAULT_LOOKAHEAD end
-        local next_node = lookahead_target(path, pp, lm)
-        if next_node and pathfinder and pathfinder.request_move then
-            pathfinder.request_move(next_node)
-            return 'walking'
-        end
-    end
+    if accepted == false then return 'no_path' end
 
-    return 'no_path'
+    _active_target = goal
+    M.tick(true)
+    return 'walking'
 end
 
--- ---------------------------------------------------------------------------
--- Convenience: try the live actor first, fall back to a known position.
--- ---------------------------------------------------------------------------
 M.to_actor_or_pos = function (actor, fallback_pos, opts)
-    if actor then
-        local r = M.to_actor(actor, opts)
-        if r == 'interacted' or r == 'walking' or r == 'arrived' then return r end
-    end
+    if actor and M.to_actor(actor) == 'interacted' then return 'interacted' end
     if fallback_pos then return M.to_pos(fallback_pos, opts) end
     return 'no_actor'
 end
 
 -- ---------------------------------------------------------------------------
--- Stop any in-flight movement.  Activity tasks call this when done with
--- a target so movement doesn't persist across pulses.
+-- Free-roam exploration.  Tasks call this when they have no specific
+-- target but still want the player to move (helltide/return_to_zone,
+-- core/explorer, pit floor seek).  Batmobile's own explorer picks the
+-- next frontier cell and drives the player toward it; we just resume it.
+--
+-- opts.priority -- forwarded to BatmobilePlugin.set_priority (string from
+--                  the consuming plugin, governs frontier scoring).
 -- ---------------------------------------------------------------------------
-M.clear = function (_caller)
-    if pathfinder and pathfinder.clear_stored_path then
-        pcall(pathfinder.clear_stored_path)
+M.explore = function (opts)
+    local bm = batmobile()
+    if not bm then return false end
+    _active_target = nil
+    if opts and opts.priority and bm.set_priority then
+        pcall(bm.set_priority, CALLER, opts.priority)
     end
-    _path_cache.path = nil
-    _path_cache.goal_x = nil
-    _path_cache.goal_y = nil
+    if bm.resume then pcall(bm.resume, CALLER) end
+    M.tick(true)
+    return true
 end
 
 -- ---------------------------------------------------------------------------
--- Cross-zone helpers (delegates to WarPathPlugin).
+-- Per-pulse heartbeat.  Each activity api.lua pulse() must call this so
+-- Batmobile's pathfind/replan/move cycle ticks even when no task issued a
+-- set_target this pulse.
+--
+-- force=true bypasses the 10fps throttle.  to_pos uses force=true on the
+-- first step after set_target so the new path's first move fires
+-- immediately rather than waiting up to 100ms.
+-- ---------------------------------------------------------------------------
+M.tick = function (force)
+    local bm = batmobile()
+    if not bm then return end
+    local now = get_time_since_inject() or 0
+    if not force and (now - _last_tick_t) < BM_TICK_INTERVAL then return end
+    _last_tick_t = now
+    if bm.update then pcall(bm.update, CALLER) end
+    if bm.move   then pcall(bm.move,   CALLER) end
+end
+
+-- ---------------------------------------------------------------------------
+-- Stop any in-flight movement.
+-- ---------------------------------------------------------------------------
+M.clear = function (_caller)
+    _active_target = nil
+    local bm = batmobile()
+    if bm then
+        if bm.is_long_path_navigating and bm.is_long_path_navigating() and bm.stop_long_path then
+            pcall(bm.stop_long_path, CALLER)
+        end
+        if bm.clear_target then pcall(bm.clear_target, CALLER) end
+    end
+end
+
+M.is_done = function ()
+    local bm = batmobile()
+    if not bm or not bm.is_done then return true end
+    return bm.is_done()
+end
+
+-- ---------------------------------------------------------------------------
+-- Cross-zone helpers (catalog reads via WarPathPlugin -- still useful for
+-- "which zone do I teleport to next" lookups even though movement is
+-- Batmobile's job).
 -- ---------------------------------------------------------------------------
 
--- Returns an array of "go-here" steps to reach `target_zone` from the
--- player's current zone, or nil + reason on unreachable.
 M.plan_to_zone = function (target_zone)
-    local p = plugin()
+    local p = warpath()
     if not p or not p.find_route then return nil, 'no_warpath' end
     local lp = get_local_player()
     if not lp then return nil, 'no_player' end
@@ -408,10 +238,8 @@ M.plan_to_zone = function (target_zone)
     return p.find_route(cur, target_zone)
 end
 
--- Returns the actor coords in the current zone to walk to in order to
--- progress toward `target_zone`.  Returns nil when unknown.
 M.next_hop_actor = function (target_zone)
-    local p = plugin()
+    local p = warpath()
     if not p or not p.next_hop_actor then return nil end
     local w = get_current_world()
     local cur = w and w.get_current_zone_name and w:get_current_zone_name() or nil
@@ -419,9 +247,8 @@ M.next_hop_actor = function (target_zone)
     return p.next_hop_actor(cur, target_zone)
 end
 
--- Drop a bookmark at the player's current position for later recall.
 M.bookmark_here = function (id, kind, meta)
-    local p = plugin()
+    local p = warpath()
     if not p or not p.bookmark_add then return false end
     local lp = get_local_player()
     if not lp then return false end
@@ -437,9 +264,8 @@ M.bookmark_here = function (id, kind, meta)
     })
 end
 
--- Recall the nearest bookmarked POI of the given kind.
 M.bookmark_nearest = function (kind)
-    local p = plugin()
+    local p = warpath()
     if not p or not p.bookmark_nearest then return nil end
     local lp = get_local_player()
     if not lp then return nil end

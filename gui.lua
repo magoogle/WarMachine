@@ -29,19 +29,21 @@ local gui = {}
 -- ---------------------------------------------------------------------------
 -- External dependencies that stay separate from WarMachine.  These are
 -- generic libraries the bot uses but doesn't own:
---   * WarPath (or StaticPather) -- navigation: pathfinding, exploration,
---                                  cross-zone travel via host pathfinder
+--   * Batmobile     -- pathfinding + exploration; required for all movement.
+--                     Scene-aware A* that handles dungeons/pits/undercity
+--                     where WarPath's overworld nav doesn't reach.
+--   * WarPath       -- catalog reads only (POI lookup, vendor positions,
+--                     overworld helltide data).  Optional -- absent
+--                     installations fall back to live actor stream.
 --   * AlfredTheButler -- inventory/town management (optional)
 --   * Looteer         -- loot pickup (optional)
--- Alfred + Looteer are nice-to-haves; WarMachine still runs without them.
 -- ---------------------------------------------------------------------------
 local REQUIRED_PLUGINS = {
-    -- WarPath is required for all navigation.  Accept either folder name;
-    -- WarPath's main.lua sets both globals as aliases.
-    { folder = 'WarPath',          global = 'WarPathPlugin',
-      alt_folder = 'StaticPather', alt_global = 'StaticPatherPlugin' },
+    { folder = 'Batmobile',        global = 'BatmobilePlugin' },
 }
 local OPTIONAL_PLUGINS = {
+    { folder = 'WarPath',          global = 'WarPathPlugin',
+      alt_folder = 'StaticPather', alt_global = 'StaticPatherPlugin' },
     { folder = 'AlfredTheButler',  global = 'AlfredTheButlerPlugin'  },
     { folder = 'Looteer*',         global = 'LooteerPlugin'          },
 }
@@ -311,7 +313,7 @@ gui.render = function ()
     if not gui.elements.main_tree:push('WarMachine v' .. plugin_version .. ' by Magoogle') then return end
 
     -- Dependency check banner: block of red-text headers naming each
-    -- missing required plugin (currently only WarPath).
+    -- missing required plugin (currently only Batmobile).
     local missing = get_missing_dependencies()
     if #missing > 0 then
         render_menu_header('==========================================================')
@@ -319,7 +321,7 @@ gui.render = function ()
         for _, folder in ipairs(missing) do
             render_menu_header('    * ' .. folder)
         end
-        render_menu_header('  Install WarPath in scripts/ then re-enable WarMachine.')
+        render_menu_header('  Install Batmobile in scripts/ then re-enable WarMachine.')
         render_menu_header('==========================================================')
     end
     -- Soft warnings for optional integrations.  WarPath / StaticPather
