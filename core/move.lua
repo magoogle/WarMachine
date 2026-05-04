@@ -61,7 +61,9 @@ end
 --                        where hugging the wall is actually the goal (stepping
 --                        ONTO a portal switch).
 -- ---------------------------------------------------------------------------
-local DEFAULT_ARRIVE = 3.0
+local DEFAULT_ARRIVE   = 3.0
+local DEFAULT_LOOKAHEAD = 8.0   -- meters ahead on the path to target; creates
+                                 -- smooth curves instead of sharp angle changes
 
 -- Convert any of (vec3, {x=,y=,z=}, {1,2,3}) into a vec3 anchored to the
 -- player's z if the input doesn't carry one.
@@ -70,6 +72,33 @@ local function to_vec3(g, fallback_z)
     if type(g.x) == 'number' then return vec3:new(g.x, g.y, g.z or fallback_z) end
     if g[1] then return vec3:new(g[1], g[2], g[3] or fallback_z) end
     return g   -- already a vec3
+end
+
+-- ---------------------------------------------------------------------------
+-- Pure-pursuit lookahead: walk along path segments from the player's
+-- current position and return the point exactly `lookahead_m` meters
+-- ahead.  When the lookahead distance exceeds the remaining path length
+-- the final waypoint (the goal) is returned, so precise arrival is
+-- preserved at close range.
+-- ---------------------------------------------------------------------------
+local function lookahead_target(path, player_pos, lookahead_m)
+    if not path or #path == 0 then return nil end
+    if #path == 1 or lookahead_m <= 0 then return path[#path] end
+    local remaining = lookahead_m
+    local px, py, pz = player_pos:x(), player_pos:y(), player_pos:z()
+    for i = 1, #path do
+        local wp = path[i]
+        local wx, wy, wz = wp:x(), wp:y(), wp:z()
+        local dx, dy = wx - px, wy - py
+        local seg_len = math.sqrt(dx * dx + dy * dy)
+        if seg_len >= remaining then
+            local t = remaining / seg_len
+            return vec3:new(px + dx * t, py + dy * t, pz + (wz - pz) * t)
+        end
+        remaining = remaining - seg_len
+        px, py, pz = wx, wy, wz
+    end
+    return path[#path]
 end
 
 M.is_zone_supported = function ()
@@ -105,9 +134,9 @@ M.to_pos = function (goal, opts)
     local find_opts = (opts.smooth == false) and { smooth = false } or nil
     local path = p.find_path(pp, goal, find_opts)
     if path and #path > 0 then
-        -- Pick the first node we haven't already passed.  path[1] is
-        -- usually the player's position; path[2] is the next real waypoint.
-        local next_node = path[2] or path[1]
+        local lm = opts.lookahead_m
+        if lm == nil then lm = DEFAULT_LOOKAHEAD end
+        local next_node = lookahead_target(path, pp, lm)
         if next_node and pathfinder and pathfinder.request_move then
             pathfinder.request_move(next_node)
             return 'walking'
