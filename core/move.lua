@@ -42,14 +42,48 @@ local function plugin()
 end
 
 -- ---------------------------------------------------------------------------
--- Tier 1: D4 native click-to-walk via interact_object.
+-- Tier 1: D4 native click-to-walk via interact_object, with a long-range
+-- escape hatch that delegates to WarPath routing.
+--
+-- interact_object() is the right call for short distances: D4 walks the
+-- character the final few yards using its own click-to-walk handler.  But
+-- for long distances it tries to walk in a straight line with no terrain
+-- awareness -- the bot walks into cliffs / walls / closed doors.
+--
+-- When the actor is more than INTERACT_DIST_M away we route via to_pos so
+-- the host pathfinder respects terrain; once close we fall back to
+-- interact_object for the final approach.  If WarPath has no nav data for
+-- the zone (to_pos returns 'no_path') we fall back to interact_object
+-- anyway as a last resort.
 -- ---------------------------------------------------------------------------
-M.to_actor = function (actor)
-    if not actor then return 'no_actor' end
-    if not actor.get_position then return 'no_actor' end
-    if not get_local_player() then return 'no_actor' end
-    interact_object(actor)
-    return 'interacted'
+local INTERACT_DIST_M = 6.0
+
+M.to_actor = function (actor, opts)
+    if not actor or not actor.get_position then return 'no_actor' end
+    local lp = get_local_player()
+    if not lp then return 'no_actor' end
+
+    local pp = lp:get_position()
+    local ap = actor:get_position()
+    if not pp or not ap then
+        interact_object(actor)
+        return 'interacted'
+    end
+
+    local dx = ap:x() - pp:x()
+    local dy = ap:y() - pp:y()
+    if (dx * dx + dy * dy) <= INTERACT_DIST_M * INTERACT_DIST_M then
+        interact_object(actor)
+        return 'interacted'
+    end
+
+    -- Long range: route via WarPath so cliffs/walls/doors are respected.
+    local r = M.to_pos(ap, opts)
+    if r == 'no_path' then
+        interact_object(actor)
+        return 'interacted'
+    end
+    return r
 end
 
 -- ---------------------------------------------------------------------------
@@ -189,7 +223,10 @@ end
 -- Convenience: try the live actor first, fall back to a known position.
 -- ---------------------------------------------------------------------------
 M.to_actor_or_pos = function (actor, fallback_pos, opts)
-    if actor and M.to_actor(actor) == 'interacted' then return 'interacted' end
+    if actor then
+        local r = M.to_actor(actor, opts)
+        if r == 'interacted' or r == 'walking' or r == 'arrived' then return r end
+    end
     if fallback_pos then return M.to_pos(fallback_pos, opts) end
     return 'no_actor'
 end
