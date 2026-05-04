@@ -229,6 +229,28 @@ M.is_done = function ()
 end
 
 -- ---------------------------------------------------------------------------
+-- Pause Batmobile entirely.  Use during interactions (chest open, NPC click,
+-- portal step) where the bot must stand still so D4 can register the
+-- click and play the animation.  Without pausing, Batmobile's update+move
+-- heartbeat keeps walking the player away mid-interact.
+-- ---------------------------------------------------------------------------
+M.pause = function ()
+    local bm = batmobile()
+    if bm and bm.pause then pcall(bm.pause, CALLER) end
+end
+
+M.resume = function ()
+    local bm = batmobile()
+    if bm and bm.resume then pcall(bm.resume, CALLER) end
+end
+
+M.is_paused = function ()
+    local bm = batmobile()
+    if not bm or not bm.is_paused then return false end
+    return bm.is_paused()
+end
+
+-- ---------------------------------------------------------------------------
 -- Cross-zone helpers (catalog reads via WarPathPlugin -- still useful for
 -- "which zone do I teleport to next" lookups even though movement is
 -- Batmobile's job).

@@ -2,16 +2,20 @@
 -- activities/helltide/tasks/interact_poi.lua
 --
 -- Walk to + click the highest-priority POI in the queue: chests,
--- ores, herbs, shrines, pyres, world-event triggers.  Movement uses
--- core.move's tiered fallback (host pathfinder when WarPath has data,
--- internal walker otherwise).
+-- ores, herbs, shrines, pyres, world-event triggers.
 --
--- Shared primitives (see core/poi_pick.lua, core/live_actor.lua):
---   * Reachability filter on the queue picker (skip catalog entries
---     the host pathfinder can't currently route to)
---   * Live-actor matcher with helltide-specific Pyre fallback (see
---     extra_match below) so a catalog-stamped Pyre POI still finds
---     a runtime Pyre_Helltide_* live actor.
+-- Movement is delegated to core.move (Batmobile).  At interact range we
+-- pause Batmobile so the bot stands still long enough for D4 to register
+-- the click and play the open animation -- without pausing, Batmobile's
+-- heartbeat keeps walking the player away mid-interact and the chest
+-- never opens.
+--
+-- The POI is only marked visited once the live actor reports
+-- is_interactable() == false (chest opened) or disappears from the
+-- stream.  Marking visited on the FIRST interact_object call removed
+-- the POI from the queue immediately, the picker handed back the next
+-- target, and Batmobile started walking away before D4 finished the
+-- click.
 -- ---------------------------------------------------------------------------
 
 local move        = require 'core.move'
@@ -23,12 +27,26 @@ local poi_priority = require 'activities.helltide.poi_priority'
 
 local task = { name = 'interact_poi', status = 'idle' }
 
-local INTERACT_RADIUS = 3.0
+local INTERACT_RADIUS    = 3.0
+local INTERACT_COOLDOWN  = 1.5    -- min seconds between interact_object calls
+local INTERACT_GRACE_S   = 4.0    -- give up on this POI after this long without confirmation
 
 local picker = poi_pick.make_picker({
     budget        = 4,
     short_stale_s = 6.0,
 })
+
+-- Per-target interact state.  Reset when the picker hands back a new POI.
+local _engaged_key       = nil
+local _last_interact_t   = -math.huge
+local _engage_started_t  = -math.huge
+
+local function poi_key(p)
+    return string.format('%s:%d:%d',
+        p.skin or p.kind or '?',
+        math.floor(p.x or 0),
+        math.floor(p.y or 0))
+end
 
 -- Helltide-specific live-actor extra-match.  When the catalog says
 -- kind='pyre' but the runtime skin is some Pyre_Helltide_* variant
@@ -41,15 +59,20 @@ end
 
 local function find_helltide_actor(poi)
     return live_actor.find(poi, {
-        scan_lists  = 'ally',         -- helltide POIs are ally-only
-        match_mode  = 'exact',        -- catalog skin = runtime skin almost always
+        scan_lists  = 'ally',
+        match_mode  = 'exact',
         extra_match = helltide_pyre_fallback,
     })
 end
 
+local function reset_engagement()
+    if _engaged_key then move.resume() end
+    _engaged_key      = nil
+    _last_interact_t  = -math.huge
+    _engage_started_t = -math.huge
+end
+
 task.shouldExecute = function ()
-    -- Yield to higher-priority tasks; this fires whenever we have ANY POI
-    -- in the queue (which is most of the time during a helltide hour).
     local q = poi_priority.build(tracker, settings, tracker.in_maiden)
     return picker.pick(q) ~= nil
 end
@@ -63,15 +86,25 @@ task.Execute = function ()
     local q = poi_priority.build(tracker, settings, tracker.in_maiden)
     local target = picker.pick(q, { player_pos = pp })
     if not target then
+        reset_engagement()
         task.status = 'no reachable POI (exploring)'
         return
+    end
+
+    local key = poi_key(target)
+
+    -- New target picked -> drop any prior engagement state.
+    if _engaged_key and _engaged_key ~= key then
+        reset_engagement()
     end
 
     local dx = target.x - pp:x()
     local dy = target.y - pp:y()
     local d  = math.sqrt(dx*dx + dy*dy)
 
+    -- Walking phase: deliver the player within INTERACT_RADIUS of the POI.
     if d > INTERACT_RADIUS then
+        if _engaged_key == key then reset_engagement() end
         local actor = find_helltide_actor(target)
         if actor then
             move.to_actor(actor)
@@ -87,25 +120,63 @@ task.Execute = function ()
     -- Within interact radius.
     local actor = find_helltide_actor(target)
     if not actor then
-        if settings.debug_mode then
-            console.print(string.format(
-                '[Helltide] POI %s @(%.1f,%.1f) had no live actor -- marking visited',
-                target.kind, target.x, target.y))
-        end
+        -- Live actor gone -> the chest was either opened by us a moment
+        -- ago (confirms successful interact) or never had a live actor
+        -- to begin with (catalog stamp from a prior session).  Either way
+        -- mark visited and move on.
         tracker.mark_visited(target)
-        task.status = 'stale POI cleared'
+        reset_engagement()
+        task.status = target.kind .. ' opened/cleared'
         return
     end
 
-    if actor.is_interactable and actor:is_interactable() then
+    -- Begin engagement: pause Batmobile so the bot stands still through
+    -- the open animation.  Stamp the engagement timer so we can give up
+    -- if the chest never opens (anti-stuck).
+    if _engaged_key ~= key then
+        _engaged_key      = key
+        _engage_started_t = get_time_since_inject() or 0
+        _last_interact_t  = -math.huge   -- allow first interact this pulse
+        move.pause()
+    end
+
+    local now = get_time_since_inject() or 0
+
+    -- Chest opened (or transitioned to non-interactable for any reason).
+    -- Mark visited and clean up.
+    if not (actor.is_interactable and actor:is_interactable()) then
+        tracker.mark_visited(target)
+        reset_engagement()
+        task.status = target.kind .. ' opened'
+        return
+    end
+
+    -- Anti-stuck: bot has been at this POI for > INTERACT_GRACE_S without
+    -- the chest going non-interactable.  Mark visited, resume, move on.
+    if (now - _engage_started_t) > INTERACT_GRACE_S then
+        if settings.debug_mode then
+            console.print(string.format(
+                '[Helltide] %s @ (%.1f,%.1f) interact grace expired',
+                target.kind, target.x, target.y))
+        end
+        tracker.mark_visited(target)
+        reset_engagement()
+        task.status = target.kind .. ' grace timeout'
+        return
+    end
+
+    -- Throttled interact.  D4 needs the player to settle before the click
+    -- registers; spamming interact_object every pulse reproduces the
+    -- "rapid-fire then walk away" symptom.
+    if (now - _last_interact_t) >= INTERACT_COOLDOWN then
         if orbwalker and orbwalker.set_clear_toggle then
             orbwalker.set_clear_toggle(false)
         end
         interact_object(actor)
-        tracker.mark_visited(target)
-        task.status = 'interacted: ' .. target.kind
+        _last_interact_t = now
+        task.status = 'opening ' .. target.kind
     else
-        task.status = 'POI not interactable yet'
+        task.status = 'waiting for ' .. target.kind .. ' to open'
     end
 end
 
