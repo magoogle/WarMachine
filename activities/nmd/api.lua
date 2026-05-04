@@ -31,6 +31,10 @@ M.pulse = function ()
     -- Mounting disabled in nightmare dungeons: tight corridors + combat
     -- density makes mount churn a net loss.  Only Helltide uses auto-mount.
     mount_manager.update({ disabled = true, allow_mount = false })
+    -- Pick up any Healing_Well_Basic positions visible this pulse.  Wells
+    -- mark sealed-door areas; seek_boss_room uses the cache to find the
+    -- boss entrance after objectives complete.
+    tracker.scan_healing_wells()
     runner.pulse()
     -- Drive Batmobile's pathfind/replan/move loop.  move.to_pos already
     -- ticks force=true on its own pulse; this catches the no-new-target

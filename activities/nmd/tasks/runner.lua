@@ -36,6 +36,13 @@ return runner.make({
                               -- resumes walking afterward, exactly the
                               -- "explore + kill + arrive" loop the
                               -- objective progression wants.
+        'seek_boss_room',     -- Once objectives are complete + boss not
+                              -- yet seen, route to a remembered
+                              -- Healing_Well_Basic position.  Wells in
+                              -- NMD floors typically anchor sealed
+                              -- boss-room doors that unseal on objective
+                              -- complete -- the well is the closest
+                              -- pre-known waypoint to the new path.
         'walk_to_quest_marker', -- Walk toward D4's live quest checkpoint
                                 -- marker (TrackedCheckpoint_Marker
                                 -- actor).  Gives the bot a directional

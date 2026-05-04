@@ -69,6 +69,17 @@ local tracker = {
     ambush_complete    = false,
     ambush_complete_t  = nil,
 
+    -- Healing_Well_Basic positions seen this run.  Wells in NMD floors
+    -- typically spawn next to sealed boss-room doors -- once objectives
+    -- complete and the door unseals, we route to the closest unvisited
+    -- well to find the new path forward.  Reset per run since each NMD
+    -- has a different layout.
+    --   healing_wells     -- array of { x, y, z, visited = false }
+    --   healing_well_keys -- dedup set keyed by integer (x,y) so the
+    --                        per-pulse scan doesn't append duplicates
+    healing_wells     = {},
+    healing_well_keys = {},
+
     run_start_t    = nil,
 
     current_task   = { name = 'idle', status = 'idle' },
@@ -95,8 +106,34 @@ tracker.reset_run = function ()
     tracker.ambush_anchor         = nil
     tracker.ambush_complete       = false
     tracker.ambush_complete_t     = nil
+    tracker.healing_wells         = {}
+    tracker.healing_well_keys     = {}
     tracker.run_start_t           = get_time_since_inject and get_time_since_inject() or 0
     tracker.current_task   = { name = 'idle', status = 'idle' }
+end
+
+-- Per-pulse scan: pick up any Healing_Well_Basic actor in the live stream
+-- and add its position to tracker.healing_wells.  Cheap (single iteration
+-- of get_all_actors with a substring check); dedup via integer-floor key.
+tracker.scan_healing_wells = function ()
+    if not actors_manager or not actors_manager.get_all_actors then return end
+    for _, a in pairs(actors_manager:get_all_actors()) do
+        local sn = a.get_skin_name and a:get_skin_name() or ''
+        if sn:find('Healing_Well_Basic', 1, true) then
+            local p = a.get_position and a:get_position() or nil
+            if p then
+                local x, y, z = p:x(), p:y(), p:z()
+                local key = string.format('%d:%d', math.floor(x), math.floor(y))
+                if not tracker.healing_well_keys[key] then
+                    tracker.healing_well_keys[key] = true
+                    tracker.healing_wells[#tracker.healing_wells + 1] = {
+                        x = x, y = y, z = z,
+                        visited = false,
+                    }
+                end
+            end
+        end
+    end
 end
 
 tracker.mark_visited = function (poi)
