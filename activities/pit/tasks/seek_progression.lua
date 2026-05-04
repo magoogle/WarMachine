@@ -71,8 +71,9 @@ local SEQ_COVERAGE_TARGET = 0.7
 -- We start the sequencer once per floor (key = world_id) and let it
 -- run.  When the floor changes we abort + restart so the next-floor's
 -- new exploration state takes over.
-local _seq_world_id = nil
-local _seq_started_at = nil
+local _seq_world_id     = nil  -- world_id PATH A is active on (nil = not started)
+local _seq_abandoned_wid = nil -- world_id PATH A genuinely failed on; PATH B owns that floor
+local _seq_started_at   = nil
 
 -- ---- PATH B state (legacy walker) ----
 local _stale = {}
@@ -177,6 +178,7 @@ local function seq_interact_fn(_ctx)
 end
 
 local function start_sequencer_goal()
+    local floor_wid = get_world_id()   -- captured in closure so on_abort records the right floor
     local ok, why = nav.find_and_take_portal({
         target_kind     = 'pit_floor_portal',
         target_coverage = SEQ_COVERAGE_TARGET,
@@ -188,21 +190,28 @@ local function start_sequencer_goal()
             -- on the next pulse.  Nothing to do here.
         end,
         on_abort = function (_ctx, reason)
-            -- Most common: 'fully_explored' / 'no_frontier' -- the
-            -- room is fully swept but no portal was spotted.  Drop
-            -- back to PATH B for the rest of this floor.
+            -- Reasons: 'fully_explored', 'no_nav_data', 'stuck(...)',
+            -- 'step_failed', 'step timeout' = genuine failure → PATH B owns this floor.
+            -- Transient reasons (zone_change, replaced, floor_change, left_pit)
+            -- = PATH A may retry on the next valid floor entry.
             console.print('[Pit] sequencer aborted: ' .. tostring(reason)
                 .. ' -- falling back to legacy seeker')
-            _seq_world_id = -1   -- sentinel: don't re-attempt this floor
+            _seq_world_id = nil
+            local transient = (reason == 'zone_change') or (reason == 'replaced')
+                           or (reason == 'floor_change') or (reason == 'left_pit')
+                           or (reason == 'abort')
+            if not transient then
+                _seq_abandoned_wid = floor_wid
+            end
         end,
     })
     if ok then
-        _seq_world_id   = get_world_id()
+        _seq_world_id   = floor_wid
         _seq_started_at = get_time_since_inject() or 0
     else
-        -- WarPath capability check failed; mark this floor as PATH-B
-        -- only so we don't keep retrying every pulse.
-        _seq_world_id = -1
+        -- WarPath capability missing: mark this floor PATH-B so we don't retry every pulse.
+        _seq_world_id    = nil
+        _seq_abandoned_wid = floor_wid
     end
 end
 
@@ -212,16 +221,19 @@ local function path_a_active()
     if not nav.has_sequencer() then return false end
     local wid = get_world_id()
     if not wid then return false end
-    -- Floor change?  Restart the goal.
-    if _seq_world_id ~= wid and _seq_world_id ~= -1 then
+    -- This specific floor was genuinely abandoned; PATH B owns it.
+    if _seq_abandoned_wid == wid then return false end
+    -- New floor (first run, floor descent, or re-entry after transient abort): start PATH A.
+    if _seq_world_id ~= wid then
         if nav.is_active() then nav.abort('floor_change') end
         start_sequencer_goal()
+        -- start just ran and immediately failed for this floor
+        if _seq_abandoned_wid == wid then return false end
     end
-    -- Sentinel: this floor was abandoned by the sequencer; PATH B owns it.
-    if _seq_world_id == -1 then return false end
-    -- Goal not started yet?
+    -- Goal not started yet or lost without a recorded failure?
     if not nav.is_active() then
         start_sequencer_goal()
+        if _seq_abandoned_wid == wid then return false end
         return nav.is_active()
     end
     return true

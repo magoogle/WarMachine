@@ -19,6 +19,8 @@ return runner.make({
                               -- from kills along the way, chest auto-reclaims
                               -- top priority once affordable.
         'kill_monster',       -- fallback combat
+        'explore',            -- wander the zone when no POIs in queue;
+                              -- boundary-guarded (stops at ring edge)
         'idle',
     },
 })

@@ -129,28 +129,62 @@ M.build = function (tracker, settings)
         return tracker.poi_cache
     end
     local out = {}
-    if not StaticPatherPlugin or not StaticPatherPlugin.get_actors then
-        tracker.poi_cache = out
-        tracker.last_poi_rebuild_t = now
-        return out
-    end
-    local actors = StaticPatherPlugin.get_actors()
-    if not actors or #actors == 0 then
-        tracker.poi_cache = out
-        tracker.last_poi_rebuild_t = now
-        return out
-    end
     local ctx = { visited = tracker.visited, settings = settings }
-    for _, a in ipairs(actors) do
-        local s, d = score_poi(a, ctx)
-        if s then
-            out[#out + 1] = {
-                kind = a.kind, skin = a.skin,
-                x = a.x, y = a.y, z = a.z, floor = a.floor,
-                score = s, dist = d,
-            }
+
+    -- Catalog scan: portals, chests, shrines, and any objectives that
+    -- the recorder has already classified.  Many dungeons have partial
+    -- or no catalog data -- the live scan below fills that gap.
+    if StaticPatherPlugin and StaticPatherPlugin.get_actors then
+        local actors = StaticPatherPlugin.get_actors()
+        if actors then
+            for _, a in ipairs(actors) do
+                local s, d = score_poi(a, ctx)
+                if s then
+                    out[#out + 1] = {
+                        kind = a.kind, skin = a.skin,
+                        x = a.x, y = a.y, z = a.z, floor = a.floor,
+                        score = s, dist = d,
+                    }
+                end
+            end
         end
     end
+
+    -- Live actor scan: catch gating objectives (switch, lever, pedestal …)
+    -- that are in the D4 actor stream but not yet in the static catalog.
+    -- 26/28 dungeon zones have zero objectives recorded; without this scan
+    -- the bot arrives near the quest marker, stops (within 8m arrive radius),
+    -- and wanders via freeroam without clicking the gating interactable.
+    -- score_poi already deduplicates catalog entries that also appear here.
+    if get_all_actors and ctx.settings.do_objectives then
+        local all = get_all_actors()
+        if all then
+            for _, a in ipairs(all) do
+                local sn = a.get_skin_name and a:get_skin_name() or ''
+                if sn ~= '' and skin_is_objective(sn) then
+                    if a.is_interactable and a:is_interactable() then
+                        local ap = a.get_position and a:get_position()
+                        if ap then
+                            local live_poi = {
+                                kind = 'objective', skin = sn,
+                                x = ap:x(), y = ap:y(), z = ap:z(),
+                            }
+                            local s, d = score_poi(live_poi, ctx)
+                            if s then
+                                out[#out + 1] = {
+                                    kind = 'objective', skin = sn,
+                                    x = ap:x(), y = ap:y(), z = ap:z(),
+                                    score = s, dist = d,
+                                    live_actor = a,
+                                }
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
     table.sort(out, function (a, b) return a.score > b.score end)
     tracker.poi_cache = out
     tracker.last_poi_rebuild_t = now

@@ -222,6 +222,42 @@ M.build = function (tracker, settings, maiden_active)
         end
     end
 
+    -- Live actor stream scan: capture helltide POIs visible right now that
+    -- aren't in the catalog (sparse zones, rotation variants, etc.).
+    -- Runs every build() cycle alongside the catalog scan so zones with
+    -- zero catalog data still populate the queue as chests come into view.
+    if actors_manager and actors_manager.get_ally_actors then
+        for _, a in pairs(actors_manager:get_ally_actors()) do
+            local sn = a.get_skin_name and a:get_skin_name() or ''
+            local kind = nil
+            if sn:find('usz_rewardGizmo', 1, true) then
+                kind = 'chest_helltide_targeted'
+            elseif sn:find('usz_silentChest', 1, true) then
+                kind = 'chest_helltide_silent'
+            elseif sn:find('Pyre_Helltide', 1, true) then
+                kind = 'pyre'
+            end
+            if kind then
+                local ap = a.get_position and a:get_position()
+                if ap then
+                    local live_poi = {
+                        kind = kind, skin = sn,
+                        x = ap:x(), y = ap:y(), z = ap:z(),
+                    }
+                    local s, d = score_poi(live_poi, ctx)
+                    if s then
+                        out[#out + 1] = {
+                            kind = kind, skin = sn,
+                            x = ap:x(), y = ap:y(), z = ap:z(),
+                            score = s, dist = d,
+                            live_actor = a,   -- stash so interact_poi can skip the stream search
+                        }
+                    end
+                end
+            end
+        end
+    end
+
     table.sort(out, function (a, b) return a.score > b.score end)
     tracker.poi_cache = out
     tracker.last_poi_rebuild_t = now
