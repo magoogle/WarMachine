@@ -1,35 +1,14 @@
 -- ---------------------------------------------------------------------------
 -- activities/pit/tasks/seek_progression.lua
 --
--- Pick the next progression POI (pit_floor_portal / pit_exit /
--- dungeon_entrance) and walk toward it.
---
--- Two implementations, picked at runtime:
---
---   PATH A (preferred): WarPath sequencer.  When WarPathPlugin
---   exposes find_and_take_portal (newer bundles), we hand the goal to
---   the sequencer once per floor descent.  It runs the user's exact
---   pit-floor flow: explore the room until coverage is high AND a
---   pit_floor_portal has been spotted (bookmarked), then walk to the
---   bookmarked portal and click it.  kill_monster (higher in the
---   runner chain) preempts this task whenever an enemy is in
---   kill_range, so the sequencer's combat_guard pauses movement
---   automatically while the bot fights.
---
---   PATH B (legacy): catalog scan + walker.  Used when WarPath is
---   older / not present.  Same logic that shipped before: pick the
---   closest non-stale, non-visited progression POI, set the walker's
---   target, observe whether we're making progress, mark stale on
---   stall.
---
--- The runtime branch is decided per-pulse in shouldExecute -- so a
--- mid-session WarPath upgrade flips to PATH A on the next pulse with
--- no restart needed.  PATH B remains the fallback for zones the
--- preloader hasn't reached yet.
+-- Pick the next progression POI from the WarPath catalog (pit_floor_portal /
+-- pit_exit / dungeon_entrance) and walk toward it via Batmobile.  When no
+-- catalog candidate is reachable, yield -- runner.lua's freeroam fallback
+-- (core/explorer.lua -> move.explore) drives Batmobile's own exploration
+-- until a portal comes into stream and interact_poi / floor_portal grabs it.
 -- ---------------------------------------------------------------------------
 
 local move    = require 'core.move'
-local nav     = require 'core.nav'
 local zone    = require 'core.zone'
 local find    = require 'core.find'
 local reach   = require 'core.reach'
@@ -37,7 +16,6 @@ local tracker = require 'activities.pit.tracker'
 
 local task = { name = 'seek_progression', status = 'idle' }
 
--- ---- Tunables (shared) ----
 local PROGRESSION_KINDS = {
     pit_floor_portal = true,
     pit_exit         = true,
@@ -49,10 +27,9 @@ local ENEMY_KINDS = {
     boss     = true,
 }
 local INTERACT_RADIUS  = 4.0
--- Back-portal blacklist radius (5y squared).  Updated 2026-05 to
--- match the corrected geometry: pit floor descents spawn the player
--- ON TOP of the back portal, not ~22y away.  Same default as
--- core/entry_portal.  See pit/floor_portal.lua for context.
+-- Back-portal blacklist radius (5y squared).  Pit floor descents spawn the
+-- player ON TOP of the back portal; without this filter we'd pick it as
+-- the closest progression POI and try to re-enter the previous floor.
 local BACK_PORTAL_R_SQ = 25
 local STUCK_TIMEOUT_S  = 10.0
 local STALE_RETRY_S    = 30.0
@@ -61,27 +38,14 @@ local LIVE_PORTAL_NEAR_R = 8.0
 local LIVE_PORTAL_PATTERN = 'Portal_Dungeon'
 local MAX_CANDIDATE_RANGE = 25.0
 
--- Sequencer goal coverage threshold.  Lower than 1.0 so we don't
--- waste real time exploring corners of the room when we've already
--- bookmarked the portal.  Higher than 0.5 so we generally wait until
--- the back-portal area has been swept.
-local SEQ_COVERAGE_TARGET = 0.7
+-- Reachability budget: cap A* calls per pulse so a long candidate list can't
+-- pin the game thread.
+local SEEK_REACH_BUDGET = 4
 
--- ---- PATH A state (sequencer-driven) ----
--- We start the sequencer once per floor (key = world_id) and let it
--- run.  When the floor changes we abort + restart so the next-floor's
--- new exploration state takes over.
-local _seq_world_id     = nil  -- world_id PATH A is active on (nil = not started)
-local _seq_abandoned_wid = nil -- world_id PATH A genuinely failed on; PATH B owns that floor
-local _seq_started_at   = nil
-
--- ---- PATH B state (legacy walker) ----
 local _stale = {}
 local _target_key      = nil
 local _target_set_t    = nil
 local _last_arrived_dist = nil
-
--- ---- Shared helpers ----
 
 local function poi_key(a)
     return string.format('%s:%d:%d',
@@ -127,139 +91,13 @@ local function is_stale(key, now)
     return true
 end
 
-local function get_world_id()
-    local w = get_current_world()
-    return w and w.get_world_id and w:get_world_id() or nil
-end
-
--- ---------------------------------------------------------------------------
--- PATH A: sequencer-driven
--- ---------------------------------------------------------------------------
-
-local function seq_combat_guard(_ctx)
-    -- True = HOLD movement.  Hold whenever an enemy is in kill range,
-    -- so kill_monster (higher priority) gets the pulse.  Note:
-    -- kill_monster is RUNNER-priority, not sequencer-driven, so even
-    -- without this guard kill_monster would preempt seek_progression's
-    -- shouldExecute.  But we still set the guard so the sequencer
-    -- doesn't try to replan a path mid-fight.
-    return find.any_enemy_in_range(15)
-end
-
-local function seq_interact_fn(_ctx)
-    -- The sequencer arrived at the bookmarked portal.  Find the live
-    -- portal actor in the stream and interact with it.  If no live
-    -- portal exists this run (the catalog coord wasn't where the
-    -- portal actually spawned), we abort so PATH A can re-attempt
-    -- with explore_until on the next pulse.
-    if not actors_manager or not actors_manager.get_all_actors then return end
-    local lp = get_local_player()
-    local pp = lp and lp:get_position()
-    if not pp then return end
-    for _, a in pairs(actors_manager:get_all_actors()) do
-        local sn = a.get_skin_name and a:get_skin_name() or ''
-        if sn:find(LIVE_PORTAL_PATTERN, 1, true)
-           and not sn:find('Light_NoShadows', 1, true)
-           and a.is_interactable and a:is_interactable()
-        then
-            local p = a:get_position()
-            if p then
-                local dx = p:x() - pp:x()
-                local dy = p:y() - pp:y()
-                if dx*dx + dy*dy <= LIVE_PORTAL_NEAR_R * LIVE_PORTAL_NEAR_R then
-                    tracker.portal_just_used = true
-                    tracker.portal_used_t = get_time_since_inject() or 0
-                    interact_object(a)
-                    return
-                end
-            end
-        end
-    end
-end
-
-local function start_sequencer_goal()
-    local floor_wid = get_world_id()   -- captured in closure so on_abort records the right floor
-    local ok, why = nav.find_and_take_portal({
-        target_kind     = 'pit_floor_portal',
-        target_coverage = SEQ_COVERAGE_TARGET,
-        interact_fn     = seq_interact_fn,
-        combat_guard    = seq_combat_guard,
-        on_complete = function (_ctx)
-            -- Sequencer succeeded; portal click happened.  Floor change
-            -- is detected by floor_portal.lua's update_world_tracking
-            -- on the next pulse.  Nothing to do here.
-        end,
-        on_abort = function (_ctx, reason)
-            -- Reasons: 'fully_explored', 'no_nav_data', 'stuck(...)',
-            -- 'step_failed', 'step timeout' = genuine failure → PATH B owns this floor.
-            -- Transient reasons (zone_change, replaced, floor_change, left_pit)
-            -- = PATH A may retry on the next valid floor entry.
-            console.print('[Pit] sequencer aborted: ' .. tostring(reason)
-                .. ' -- falling back to legacy seeker')
-            _seq_world_id = nil
-            local transient = (reason == 'zone_change') or (reason == 'replaced')
-                           or (reason == 'floor_change') or (reason == 'left_pit')
-                           or (reason == 'abort')
-            if not transient then
-                _seq_abandoned_wid = floor_wid
-            end
-        end,
-    })
-    if ok then
-        _seq_world_id   = floor_wid
-        _seq_started_at = get_time_since_inject() or 0
-    else
-        -- WarPath capability missing: mark this floor PATH-B so we don't retry every pulse.
-        _seq_world_id    = nil
-        _seq_abandoned_wid = floor_wid
-    end
-end
-
--- Returns true when PATH A is currently driving, false when PATH B
--- should run (or the activity is between goals).
-local function path_a_active()
-    if not nav.has_sequencer() then return false end
-    local wid = get_world_id()
-    if not wid then return false end
-    -- This specific floor was genuinely abandoned; PATH B owns it.
-    if _seq_abandoned_wid == wid then return false end
-    -- New floor (first run, floor descent, or re-entry after transient abort): start PATH A.
-    if _seq_world_id ~= wid then
-        if nav.is_active() then nav.abort('floor_change') end
-        start_sequencer_goal()
-        -- start just ran and immediately failed for this floor
-        if _seq_abandoned_wid == wid then return false end
-    end
-    -- Goal not started yet or lost without a recorded failure?
-    if not nav.is_active() then
-        start_sequencer_goal()
-        if _seq_abandoned_wid == wid then return false end
-        return nav.is_active()
-    end
-    return true
-end
-
--- ---------------------------------------------------------------------------
--- PATH B: legacy catalog scan
--- ---------------------------------------------------------------------------
-
--- Reachability budget for catalog scan.  Cap A* calls per pulse so
--- a long candidate list can't pin the game thread.
-local SEEK_REACH_BUDGET = 4
-
--- Pick the closest reachable catalog actor matching `kind_set`.  Uses
--- core/reach.first_reachable for the budgeted A* walk, layered on
--- pit-specific filters (back-portal blacklist, MAX_CANDIDATE_RANGE,
--- walkability probe).
+-- Pick the closest reachable catalog actor matching `kind_set`.
 local function pick_closest_kind(pp, now, kind_set)
     local plug = rawget(_G, 'WarPathPlugin') or rawget(_G, 'StaticPatherPlugin')
     if not plug or not plug.get_actors then return nil end
     local ok, actors = pcall(plug.get_actors)
     if not ok or not actors then return nil end
 
-    -- Build distance-sorted candidate list passing the cheap filters.
-    -- Activity-specific bits stay inline: pit's back_portal blacklist,
-    -- MAX_CANDIDATE_RANGE, the walkability probe.
     local candidates = {}
     for _, a in ipairs(actors) do
         if kind_set[a.kind or ''] then
@@ -288,9 +126,6 @@ local function pick_closest_kind(pp, now, kind_set)
     table.sort(candidates, function (u, v) return u.dist < v.dist end)
     if #candidates == 0 then return nil, math.huge end
 
-    -- Reach-filtered pick via the shared primitive.  Soft-stale any
-    -- candidate that the picker walked past as unreachable so we
-    -- don't re-A* it every pulse while exploring around it.
     local picked, picked_idx = reach.first_reachable(
         candidates,
         function (c)
@@ -300,8 +135,6 @@ local function pick_closest_kind(pp, now, kind_set)
     )
     if not picked then return nil, math.huge end
 
-    -- Mark every candidate the picker walked past stale (the ones it
-    -- A*-checked and rejected).  Picked_idx tells us where it stopped.
     for i = 1, (picked_idx or 0) - 1 do
         _stale[candidates[i].key] = now
     end
@@ -314,28 +147,10 @@ local function pick_closest(pp, now)
     return pick_closest_kind(pp, now, ENEMY_KINDS)
 end
 
--- ---------------------------------------------------------------------------
--- shouldExecute / Execute
--- ---------------------------------------------------------------------------
-
 task.shouldExecute = function ()
-    if not zone.in_pit() then
-        if nav.is_active() then nav.abort('left_pit') end
-        return false
-    end
+    if not zone.in_pit() then return false end
     if find.any_enemy_in_range(25) then return false end   -- yield to combat
 
-    -- PATH A: if WarPath sequencer is available, let it own the floor.
-    -- shouldExecute returns false here because the sequencer drives
-    -- movement via WarPath's own on_update tick; we don't need this
-    -- task's Execute to fire.  We just keep checking each pulse so
-    -- floor changes / aborts re-attach.
-    if path_a_active() then
-        task.status = 'sequencer driving (' .. tostring(get_world_id()) .. ')'
-        return false
-    end
-
-    -- PATH B: legacy.
     local lp = get_local_player()
     if not lp then return false end
     local pp = lp:get_position()
@@ -355,8 +170,6 @@ task.shouldExecute = function ()
 end
 
 task.Execute = function ()
-    -- This only fires on PATH B.  PATH A never reaches Execute because
-    -- shouldExecute returned false while it was active.
     local lp = get_local_player()
     if not lp then return end
     local pp = lp:get_position()
@@ -389,7 +202,7 @@ task.Execute = function ()
 
     move.to_pos({ x = poi.x, y = poi.y, z = poi.z or pp:z() },
                 { arrive_radius = INTERACT_RADIUS })
-    task.status = string.format('walking to %s @ (%.0f,%.0f) %.0fm (legacy)',
+    task.status = string.format('walking to %s @ (%.0f,%.0f) %.0fm',
         poi.kind or '?', poi.x or 0, poi.y or 0, task._d)
 end
 
