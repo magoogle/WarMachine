@@ -100,25 +100,39 @@ local function ensure_path_for_current_zone()
     return task.path
 end
 
+-- Anchor is only valid when the captured zone matches the current zone.
+-- A WarPlan teleport into a new helltide region leaves the prior session's
+-- position stranded in a different overworld zone -- WarPath cannot path
+-- there, so the bot would stand still indefinitely.
+local function anchor_valid()
+    return tracker.last_in_zone_pos
+       and tracker.last_in_zone_zone == zone.current()
+end
+
 task.shouldExecute = function ()
     if is_in_helltide() then
         -- Inside the ring: snapshot the anchor every pulse.
         local lp = get_local_player()
-        if lp then tracker.last_in_zone_pos = lp:get_position() end
+        if lp then
+            tracker.last_in_zone_pos  = lp:get_position()
+            tracker.last_in_zone_zone = zone.current()
+        end
         -- Also drop any path-following state -- we don't need it inside.
         task.path     = nil
         task.path_zone = nil
         return false
     end
     if not helltide_active_hour() then return false end
-    if tracker.last_in_zone_pos then return true end
+    if anchor_valid() then return true end
     if ensure_path_for_current_zone() then return true end
     return closest_catalog_poi() ~= nil
 end
 
 task.Execute = function ()
-    -- Option 1: recovery anchor (we've been inside, walk back).
-    if tracker.last_in_zone_pos then
+    -- Option 1: recovery anchor (we've been inside, walk back).  Only when
+    -- the anchor was captured in the current zone -- otherwise fall through
+    -- to the maiden path / catalog seed for this zone.
+    if anchor_valid() then
         move.to_pos(tracker.last_in_zone_pos, { arrive_radius = 5 })
         task.status = 'returning to last in-zone pos'
         return

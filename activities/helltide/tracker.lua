@@ -18,8 +18,12 @@ local tracker = {
     maiden_brazier_pos = nil,    -- vec3 of the brazier we're committed to
 
     -- Boundary recovery: last confirmed in-zone position so we can navigate
-    -- back if we wander out.
+    -- back if we wander out.  `last_in_zone_zone` is the zone the position
+    -- was captured in -- used to invalidate the anchor after a cross-zone
+    -- teleport (a stale position from the previous helltide region is in
+    -- a different overworld and would not be reachable via WarPath).
     last_in_zone_pos   = nil,
+    last_in_zone_zone  = nil,
 
     -- Throttle for spawn-fetcher / poi-list rebuild
     last_poi_rebuild_t = -math.huge,
@@ -34,6 +38,7 @@ tracker.reset_run = function ()
     tracker.in_maiden          = false
     tracker.maiden_brazier_pos = nil
     tracker.last_in_zone_pos   = nil
+    tracker.last_in_zone_zone  = nil
     tracker.last_poi_rebuild_t = -math.huge
     tracker.poi_cache          = nil
     tracker.current_task       = { name = 'idle', status = 'idle' }

@@ -60,9 +60,19 @@ local function helltide_active_hour()
     return minute < 55
 end
 
+local function anchor_in_current_zone()
+    if not tracker.last_in_zone_pos then return false end
+    local w = get_current_world()
+    local cur = w and w.get_current_zone_name and w:get_current_zone_name() or nil
+    return tracker.last_in_zone_zone == cur
+end
+
 M.shouldExecute = function ()
     if has_helltide_buff() then return true end
-    if helltide_active_hour() and tracker.last_in_zone_pos ~= nil then return true end
+    -- Only honor the recovery anchor when it was captured in the CURRENT
+    -- zone.  After a WarPlan cross-zone teleport, the previous run's
+    -- position is stale and would mislead engagement decisions.
+    if helltide_active_hour() and anchor_in_current_zone() then return true end
     -- WarPlan helltide objective is active -- engage even without the
     -- buff so we can navigate into the ring.
     if core_mode.is_warplan() then
