@@ -30,20 +30,12 @@ M.label = 'Helltide'
 M.is_loaded = function () return true end
 
 -- ---------------------------------------------------------------------------
--- shouldExecute -- engages the helltide module in a few situations:
---
+-- shouldExecute -- engages the helltide module when:
 --   * Player has the helltide buff -- definitely inside the ring.
---   * Helltide hour active AND we have a `last_in_zone_pos` -- the
---     return_to_zone task drives us back when we wander off the edge.
---   * WarPlan mode AND a Helltide WarPlan quest is active -- we may
---     not have the buff yet (just TP'd in) but WarPlan is telling us
---     to be here, so engage and let return_to_zone walk us into the ring.
---   * Standalone HELLTIDE mode AND helltide hour active -- same idea:
---     run the activity even before the buff lights up.
---
--- Without the WarPlan/standalone gates the activity wouldn't engage on
--- a fresh TP into a helltide zone (no buff yet, no in-zone-pos yet),
--- and the bot would just stand there.
+--   * WarPlan mode AND a Helltide WarPlan quest is active -- we may not
+--     have the buff yet (just TP'd in) but WarPlan is telling us to be
+--     here, so engage and let return_to_zone walk us into the ring.
+--   * Standalone HELLTIDE mode AND helltide hour active.
 -- ---------------------------------------------------------------------------
 local function has_helltide_buff()
     local lp = get_local_player()
@@ -60,19 +52,8 @@ local function helltide_active_hour()
     return minute < 55
 end
 
-local function anchor_in_current_zone()
-    if not tracker.last_in_zone_pos then return false end
-    local w = get_current_world()
-    local cur = w and w.get_current_zone_name and w:get_current_zone_name() or nil
-    return tracker.last_in_zone_zone == cur
-end
-
 M.shouldExecute = function ()
     if has_helltide_buff() then return true end
-    -- Only honor the recovery anchor when it was captured in the CURRENT
-    -- zone.  After a WarPlan cross-zone teleport, the previous run's
-    -- position is stale and would mislead engagement decisions.
-    if helltide_active_hour() and anchor_in_current_zone() then return true end
     -- WarPlan helltide objective is active -- engage even without the
     -- buff so we can navigate into the ring.
     if core_mode.is_warplan() then

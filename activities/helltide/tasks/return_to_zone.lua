@@ -1,43 +1,21 @@
 -- ---------------------------------------------------------------------------
 -- activities/helltide/tasks/return_to_zone.lua
 --
--- Get the bot INTO the helltide ring.  Three navigation sources, in
--- preference order:
---
---   1) `tracker.last_in_zone_pos` -- recovery from inside the ring;
---      we wandered out and lost the buff.  Walk back to the last
---      confirmed-inside position.
---
---   2) Maiden path (data/maiden_paths.lua) -- WarPlan typically TPs
---      us to a town WAYPOINT near the helltide region (the user's
---      expected behavior: "We always start in a town near the
---      helltide when we teleport").  Each helltide-adjacent town
---      has a recorded waypoint sequence that walks out of town to
---      the maiden ritual; we replay it waypoint-by-waypoint.  Path
---      data ships with the legacy HelltideRevamped plugin and is
---      loaded at runtime if available.
---
---   3) Closest catalogued helltide POI (StaticPatherPlugin.get_actors)
---      -- last resort when we don't have a recorded path AND we're
---      already in the helltide overworld zone (just outside the ring).
+-- Walk the player into the helltide ring.  All navigation is delegated to
+-- WarPath: we query its static catalog for the nearest helltide-related
+-- POI in the current zone and feed the position into move.to_pos.  WarPath
+-- owns pathfinding (with BatmobilePlugin.find_long_path fallback inside)
+-- and the catalog supplies the destination -- WarMachine just makes the
+-- two calls and hands the result over.
 -- ---------------------------------------------------------------------------
 
-local move          = require 'core.move'
-local zone          = require 'core.zone'
-local tracker       = require 'activities.helltide.tracker'
-local maiden_paths  = require 'activities.helltide.data.maiden_paths'
+local move = require 'core.move'
 
-local task = {
-    name           = 'return_to_zone',
-    status         = 'idle',
-    -- Path-following state (option 2).  Cleared when we leave the town
-    -- zone or arrive at the end of the path.
-    path           = nil,         -- the loaded vec3 array
-    path_idx       = 1,           -- current waypoint index
-    path_zone      = nil,         -- zone name the path was loaded for
-}
+local task = { name = 'return_to_zone', status = 'idle' }
 
--- POI kinds that signal "this is in the helltide ring" (option 3).
+-- Helltide POI kinds that mean "this point is in (or anchored to) the
+-- helltide ring."  WarPath's catalog tags actors with these kinds; we
+-- pick the closest match as the navigation target.
 local HELLTIDE_POI_KINDS = {
     chest_helltide_random   = true,
     chest_helltide_targeted = true,
@@ -46,8 +24,6 @@ local HELLTIDE_POI_KINDS = {
     portal_helltide         = true,
     objective               = true,
 }
-
-local WAYPOINT_ARRIVE_R = 4.0     -- when this close, advance to next waypoint
 
 local function is_in_helltide()
     local lp = get_local_player()
@@ -64,9 +40,15 @@ local function helltide_active_hour()
     return minute < 55
 end
 
-local function closest_catalog_poi()
-    if not StaticPatherPlugin or not StaticPatherPlugin.get_actors then return nil end
-    local ok, actors = pcall(StaticPatherPlugin.get_actors)
+local function warpath()
+    return rawget(_G, 'WarPathPlugin') or rawget(_G, 'StaticPatherPlugin') or nil
+end
+
+-- Ask WarPath for the closest helltide POI in the current zone.
+local function closest_helltide_poi()
+    local p = warpath()
+    if not p or not p.get_actors then return nil end
+    local ok, actors = pcall(p.get_actors)
     if not ok or not actors then return nil end
     local lp = get_local_player()
     if not lp then return nil end
@@ -85,108 +67,29 @@ local function closest_catalog_poi()
     return best
 end
 
--- Try to (re-)load the maiden path for the current zone.  Caches the
--- result in task.path so we don't re-require every pulse.  Returns the
--- path table, or nil if no mapping / require failed / not in a path-
--- equipped town zone.
-local function ensure_path_for_current_zone()
-    local cur = zone.current()
-    if not cur then return nil end
-    if task.path_zone ~= cur then
-        task.path     = maiden_paths.path_for_zone(cur)
-        task.path_zone = cur
-        task.path_idx = 1
-    end
-    return task.path
-end
-
--- Anchor is only valid when the captured zone matches the current zone.
--- A WarPlan teleport into a new helltide region leaves the prior session's
--- position stranded in a different overworld zone -- WarPath cannot path
--- there, so the bot would stand still indefinitely.
-local function anchor_valid()
-    return tracker.last_in_zone_pos
-       and tracker.last_in_zone_zone == zone.current()
-end
-
 task.shouldExecute = function ()
-    if is_in_helltide() then
-        -- Inside the ring: snapshot the anchor every pulse.
-        local lp = get_local_player()
-        if lp then
-            tracker.last_in_zone_pos  = lp:get_position()
-            tracker.last_in_zone_zone = zone.current()
-        end
-        -- Also drop any path-following state -- we don't need it inside.
-        task.path     = nil
-        task.path_zone = nil
-        return false
-    end
+    if is_in_helltide() then return false end
     if not helltide_active_hour() then return false end
-    if anchor_valid() then return true end
-    if ensure_path_for_current_zone() then return true end
-    return closest_catalog_poi() ~= nil
+    return closest_helltide_poi() ~= nil
 end
 
 task.Execute = function ()
-    -- Option 1: recovery anchor (we've been inside, walk back).  Only when
-    -- the anchor was captured in the current zone -- otherwise fall through
-    -- to the maiden path / catalog seed for this zone.
-    if anchor_valid() then
-        move.to_pos(tracker.last_in_zone_pos, { arrive_radius = 5 })
-        task.status = 'returning to last in-zone pos'
-        return
-    end
-
-    -- Option 2: maiden path replay.
-    local path = ensure_path_for_current_zone()
-    if path then
-        local lp = get_local_player()
-        local pp = lp and lp:get_position() or nil
-        if pp then
-            -- Advance through the path: skip waypoints we've already
-            -- passed (within WAYPOINT_ARRIVE_R).
-            while task.path_idx <= #path do
-                local wp = path[task.path_idx]
-                local dx = wp:x() - pp:x()
-                local dy = wp:y() - pp:y()
-                local d  = math.sqrt(dx*dx + dy*dy)
-                if d > WAYPOINT_ARRIVE_R then
-                    move.to_pos(wp, { arrive_radius = WAYPOINT_ARRIVE_R })
-                    task.status = string.format('maiden path %d/%d (%.0fm)',
-                        task.path_idx, #path, d)
-                    return
-                end
-                task.path_idx = task.path_idx + 1
-            end
-            -- Reached end of path.  By now we should be inside the ring;
-            -- if not, fall through to catalog seed.
-            task.path     = nil
-            task.path_zone = nil
-        end
-    end
-
-    -- Option 3: catalogued helltide POI seed.
-    local poi = closest_catalog_poi()
+    local poi = closest_helltide_poi()
     if not poi then
-        task.status = 'no nav seed available'
+        task.status = 'no helltide POI in WarPath catalog'
         return
     end
     local lp = get_local_player()
     local pp = lp and lp:get_position() or nil
-    local goal = {
-        x = poi.x,
-        y = poi.y,
-        z = poi.z or (pp and pp:z()) or 0,
-    }
+    local goal = { x = poi.x, y = poi.y, z = poi.z or (pp and pp:z()) or 0 }
     move.to_pos(goal, { arrive_radius = 5 })
     if pp then
         local dx = poi.x - pp:x()
         local dy = poi.y - pp:y()
         local d  = math.sqrt(dx*dx + dy*dy)
-        task.status = string.format('seeding to %s (%.0fm)', poi.kind or '?', d)
+        task.status = string.format('walking to %s (%.0fm)', poi.kind or '?', d)
     else
-        task.status = 'seeding to catalog POI'
+        task.status = 'walking to helltide POI'
     end
 end
 
