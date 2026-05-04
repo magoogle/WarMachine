@@ -106,14 +106,16 @@ local DEFAULT_LOOKAHEAD = 8.0   -- meters ahead on the path to target; creates
 -- per pulse so a single slot suffices; the goal-coord check evicts on
 -- target change.
 -- ---------------------------------------------------------------------------
-local PATH_CACHE_TTL_S = 0.5    -- re-plan after this much wall time
-local GOAL_TOLERANCE_M = 1.5    -- re-plan if goal coords moved more than this
+local PATH_CACHE_TTL_S    = 0.5     -- re-plan after this much wall time
+local GOAL_TOLERANCE_M    = 1.5     -- re-plan if goal coords moved more than this
+local TELEPORT_THRESHOLD_M = 15.0   -- player position jump > this counts as a teleport
 local _path_cache = {
     goal_x = nil, goal_y = nil,
     smooth = nil,
     path = nil,
     computed_at = -math.huge,
 }
+local _last_player_pos = nil   -- {x, y} from last pulse; used for teleport detection
 
 local function cached_find_path(p, pp, goal, find_opts)
     local now = (get_time_since_inject and get_time_since_inject()) or 0
@@ -194,9 +196,11 @@ end
 -- traversal that points us closer to the goal.  If we're standing next to
 -- it, find the live actor and interact_object it.  Otherwise route to it.
 -- ---------------------------------------------------------------------------
-local TRAVERSAL_SCAN_RADIUS_M = 25.0   -- only consider traversals within this much
-local PATH_END_SHORT_M        = 8.0    -- path "ends short" if final wp is more than this from goal
-local _live_actor             = nil    -- lazy-loaded core/live_actor
+local TRAVERSAL_SCAN_RADIUS_M       = 25.0   -- only consider traversals within this much
+local PATH_END_SHORT_M              = 8.0    -- path "ends short" if final wp is more than this from goal
+local TRAVERSAL_INTERACT_COOLDOWN_S = 4.0    -- don't re-click another traversal within this much
+local _live_actor                   = nil    -- lazy-loaded core/live_actor
+local _last_traversal_interact_t    = -math.huge
 
 local function live_actor_mod()
     if not _live_actor then _live_actor = require 'core.live_actor' end
@@ -232,9 +236,15 @@ end
 
 -- If the player is within INTERACT_DIST_M of the catalog traversal, find
 -- its live actor and click it.  Returns true on click, false otherwise.
+-- Cooled-down so we can't immediately re-click the same gizmo we just used
+-- (e.g. the entrance portal we just came through).
 local function try_interact_traversal(pp, catalog_t)
     local dx, dy = (catalog_t.x or 0) - pp:x(), (catalog_t.y or 0) - pp:y()
     if (dx * dx + dy * dy) > (INTERACT_DIST_M * INTERACT_DIST_M) then return false end
+    local now = (get_time_since_inject and get_time_since_inject()) or 0
+    if (now - _last_traversal_interact_t) < TRAVERSAL_INTERACT_COOLDOWN_S then
+        return false
+    end
     local live = live_actor_mod().find(catalog_t, {
         scan_lists = 'all',     -- traversals live in get_all_actors, not ally
         match_mode = 'core',    -- catalog skin may lack _Dyn suffix
@@ -243,6 +253,7 @@ local function try_interact_traversal(pp, catalog_t)
     if not live then return false end
     if live.is_interactable and not live:is_interactable() then return false end
     interact_object(live)
+    _last_traversal_interact_t = now
     return true
 end
 
@@ -260,6 +271,26 @@ M.to_pos = function (goal, opts)
     if not lp then return 'no_path' end
     local pp = lp:get_position()
     if not pp then return 'no_path' end
+
+    -- Teleport detection.  When the player jumps far between pulses (zone
+    -- change, town portal, sigil TP, death + respawn) the host pathfinder's
+    -- stored request_move and our path cache are both pointing at coords
+    -- that may now lie inside walls.  Wipe both, skip this pulse so the
+    -- host's nav state can settle, and let the next pulse re-plan fresh.
+    if _last_player_pos then
+        local jx = pp:x() - _last_player_pos.x
+        local jy = pp:y() - _last_player_pos.y
+        if (jx * jx + jy * jy) > (TELEPORT_THRESHOLD_M * TELEPORT_THRESHOLD_M) then
+            _path_cache.path = nil
+            _path_cache.goal_x, _path_cache.goal_y = nil, nil
+            if pathfinder and pathfinder.clear_stored_path then
+                pcall(pathfinder.clear_stored_path)
+            end
+            _last_player_pos = { x = pp:x(), y = pp:y() }
+            return 'teleport_settle'
+        end
+    end
+    _last_player_pos = { x = pp:x(), y = pp:y() }
 
     goal = to_vec3(goal, pp:z())
     if not goal then return 'no_path' end
