@@ -6,9 +6,9 @@
 -- Flow:
 --   1. If loot_manager.is_in_vendor_screen() -> menu is open, chain into
 --      auto-select and exit.
---   2. Vendor not in actor stream -> walk toward last-known position.
---      (Position is cached the first time we see the vendor; on cold start
---      WarPath frontier exploration is used to wander toward it.)
+--   2. Vendor not in actor stream -> look up its position from WarPath's
+--      static catalog for Skov_Temis (the vendor is a recorded POI) and
+--      navigate there.  No discovery step needed.
 --   3. Vendor in stream -> send interact_object every 2s until the menu
 --      opens or we hit the interact timeout.
 --
@@ -25,16 +25,10 @@ local move     = require 'core.move'
 local VENDOR_SKIN        = 'Warplans_Vendor'
 local INTERACT_RANGE     = 30.0
 local RETRY_INTERVAL     = 2.0    -- re-send interact every N seconds
-local WALK_TIMEOUT_S     = 60.0   -- abort if vendor not found in stream after this long
+local WALK_TIMEOUT_S     = 60.0   -- abort if vendor not in stream after this long
 local INTERACT_TIMEOUT_S = 15.0   -- abort if menu doesn't open after vendor found
 
 local task = { name = 'warplan_start_cycle', status = nil }
-
--- Session cache: last known world-position of Warplans_Vendor.  Populated
--- the first time the vendor enters the actor stream; persists for the
--- session so subsequent start_cycle calls can navigate directly to it
--- from anywhere in Skov_Temis without needing a map-teleport.
-local _vendor_pos = nil
 
 local function reset(state)
     state.pending          = false
@@ -49,8 +43,20 @@ local function menu_is_open()
     return ok and ret == true
 end
 
-local function warpath()
-    return rawget(_G, 'WarPathPlugin') or rawget(_G, 'StaticPatherPlugin') or nil
+-- Query WarPath's static catalog for the current zone to find a POI by
+-- skin name.  Returns {x,y,z} or nil.  The catalog is authoritative --
+-- no need to wait for the actor to appear in the live stream.
+local function catalog_pos(skin)
+    local p = rawget(_G, 'WarPathPlugin') or rawget(_G, 'StaticPatherPlugin')
+    if not p or not p.get_actors then return nil end
+    local actors = p.get_actors()
+    if not actors then return nil end
+    for _, a in ipairs(actors) do
+        if a.skin and a.skin:find(skin, 1, true) then
+            return { x = a.x, y = a.y, z = a.z }
+        end
+    end
+    return nil
 end
 
 task.shouldExecute = function ()
@@ -77,7 +83,7 @@ task.Execute = function ()
         return
     end
 
-    -- Start the walk-phase timer on the first pulse.
+    -- Start walk-phase timer on the first pulse.
     if not state.walk_started_at then
         state.walk_started_at = now
         state.last_click_at   = -math.huge
@@ -97,33 +103,17 @@ task.Execute = function ()
     local vendor = interact.find_by_skin(VENDOR_SKIN, true)
 
     if not vendor then
-        -- Not in stream yet: navigate toward last-known position.
-        if _vendor_pos then
-            move.to_pos(_vendor_pos)
+        -- Not in stream: use WarPath catalog to navigate directly to the
+        -- vendor's recorded position.  No discovery loop needed.
+        local pos = catalog_pos(VENDOR_SKIN)
+        if pos then
+            move.to_pos(pos)
             task.status = 'walking to vendor'
         else
-            -- Cold start (first session visit): explore Temis via WarPath
-            -- frontier until the vendor comes into stream.
-            local p  = warpath()
-            local lp = get_local_player()
-            local pp = lp and lp:get_position()
-            local w  = get_current_world()
-            local zone = w and w.get_current_zone_name and w:get_current_zone_name()
-            if p and pp and zone then
-                if p.exploration_tick then pcall(p.exploration_tick, zone, pp) end
-                if p.exploration_frontier then
-                    local tgt = p.exploration_frontier(zone, pp)
-                    if tgt then move.to_pos(tgt) end
-                end
-            end
-            task.status = 'searching for vendor (exploring Temis)'
+            task.status = 'vendor not in catalog (check WarPath data)'
         end
         return
     end
-
-    -- Vendor is in stream: cache its position for future navigation.
-    local vp = vendor:get_position()
-    if vp then _vendor_pos = { x = vp:x(), y = vp:y(), z = vp:z() } end
 
     -- Initialize interact-phase timer on first sighting.
     if not state.first_attempt_at then
@@ -144,8 +134,6 @@ task.Execute = function ()
     if now - state.last_click_at >= RETRY_INTERVAL then
         local r = interact.walk_and_interact(vendor, INTERACT_RANGE)
         if r == 'too_far' then
-            -- Vendor in stream but beyond INTERACT_RANGE: walk closer.
-            -- interact_object handles the final few yards once we're in range.
             move.to_actor(vendor)
             task.status = 'walking to vendor'
         else
