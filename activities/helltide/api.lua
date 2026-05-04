@@ -19,7 +19,8 @@ local tracker       = require 'activities.helltide.tracker'
 local runner        = require 'activities.helltide.tasks.runner'
 local quest_state   = require 'activities.helltide.quest_state'
 
-local core_mode = require 'core.mode'
+local core_mode    = require 'core.mode'
+local core_tracker = require 'core.tracker'
 
 local M = {}
 
@@ -86,11 +87,23 @@ M.pulse = function ()
     -- Mount management runs every pulse and self-throttles via cooldown.
     -- "allow_mount" gates on whether the current task is travel-flavored
     -- (interact_poi, return_to_zone) vs interaction (farm_chest, maiden).
+    --
+    -- Force-dismount AND suppress mounting whenever a WarPlan transit
+    -- sequence is in flight (Tab+click teleport, vendor menu, NPC click,
+    -- turn-in).  Without this, mount_manager fires Z in the same pulse
+    -- that test_next_obj sends Tab/click, the keystrokes collide, and
+    -- the teleport silently drops.
     local current = tracker.current_task or {}
     local travel_state = (current.name == 'interact_poi' or current.name == 'return_to_zone')
+    local wp = core_tracker.warplan
+    local wp_pending = wp.next_obj.pending
+                    or wp.test.pending
+                    or wp.turn_in.pending
+                    or wp.start_cycle.pending
     mount_manager.update({
-        disabled    = not settings_mod.auto_mount,
-        allow_mount = travel_state,
+        disabled       = not settings_mod.auto_mount,
+        allow_mount    = travel_state and not wp_pending,
+        force_dismount = wp_pending,
     })
 
     runner.pulse()
