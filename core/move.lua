@@ -131,9 +131,11 @@ M.to_pos = function (goal, opts)
     local bm = batmobile()
     if not bm or not bm.set_target then return 'no_path' end
 
-    -- Same destination, target still active -> just drive the next step.
+    -- Same destination as last call: do nothing here.  The activity
+    -- pulse's move.tick() at end-of-pulse drives the throttled heartbeat
+    -- (10fps).  Forcing a tick on every same-target call ran update+move
+    -- at the host's full pulse rate (60fps) and crushed performance.
     if _active_target and targets_match(_active_target, goal) then
-        M.tick(true)
         return 'walking'
     end
 
@@ -151,6 +153,9 @@ M.to_pos = function (goal, opts)
     if accepted == false then return 'no_path' end
 
     _active_target = goal
+    -- Force a single tick right after set_target so the brand-new path's
+    -- first step fires immediately instead of waiting up to 100ms for
+    -- the throttled heartbeat.
     M.tick(true)
     return 'walking'
 end
@@ -178,7 +183,9 @@ M.explore = function (opts)
         pcall(bm.set_priority, CALLER, opts.priority)
     end
     if bm.resume then pcall(bm.resume, CALLER) end
-    M.tick(true)
+    -- Don't force a tick here.  The activity's move.tick() heartbeat at
+    -- end of pulse handles the throttled drive.  Forcing would bypass
+    -- the 10fps throttle and run update+move at the host pulse rate.
     return true
 end
 
