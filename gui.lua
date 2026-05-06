@@ -136,6 +136,12 @@ gui.elements = {
     pit_glyph_upgrade_legendary    = cb(true,  'pit_glyph_upgrade_legendary'),
     pit_glyph_min_level            = si(1, 100,   1, 'pit_glyph_min_level'),
     pit_glyph_max_level            = si(1, 100, 100, 'pit_glyph_max_level'),
+    -- Push-mode: cluster-pull distant mob packs into AOE range.  Off
+    -- by default; flip on for high-tier pit clears.  See
+    -- activities/pit/tasks/push_monsters.lua for the algorithm.
+    pit_push_mode                  = cb(false, 'pit_push_mode'),
+    pit_push_threshold             = si(2, 30,   5,  'pit_push_threshold'),
+    pit_push_max_pull_dist         = si(20, 80,  50, 'pit_push_max_pull_dist'),
 
     -- ---- Undercity activity settings ----
     uc_tree                        = tree_node:new(1),
@@ -484,6 +490,16 @@ gui.render = function ()
         gui.elements.pit_kill_monsters:render('Kill monsters', 'Reactive combat between objectives')
         gui.elements.pit_kill_range:render('Combat search range (y)', 'How far kill_monster will engage hostiles')
         gui.elements.pit_boss_intro_delay:render('Boss intro delay (s)', 'Hold attacks this long after a boss appears')
+        gui.elements.pit_push_mode:render('Push-mode (cluster pull)',
+            'Walk toward dense distant mob packs and pull them in for AOE ' ..
+            'instead of fighting nearest-first.  Recommended for high-tier ' ..
+            'pit clears where AOE > single-target.  Off by default.')
+        if gui.elements.pit_push_mode:get() then
+            gui.elements.pit_push_threshold:render('  Engage threshold (weighted)',
+                'Stop pulling and AOE in place once this many weighted enemies (boss=4, champion=2, elite=1.5, mob=1) are within 15y.')
+            gui.elements.pit_push_max_pull_dist:render('  Max pull distance (y)',
+                'Largest cluster scan radius.  Larger = more aggressive pulling, longer walks.')
+        end
 
         render_menu_header('In-pit objectives')
         gui.elements.pit_do_chests:render('Loot chests', 'Side-corridor chests + end-of-run reward')

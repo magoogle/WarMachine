@@ -39,6 +39,25 @@ local M = {
     -- Crafter at the start of each run.
     level            = 60,
 
+    -- Push-mode: cluster-based mob pulling.  Off by default because
+    -- it changes engagement style noticeably (the bot will chase
+    -- distant packs instead of fighting whatever's nearest).  Worth
+    -- enabling at high pit tiers where dense AOE clears beat
+    -- one-at-a-time picks.  See activities/pit/tasks/push_monsters.lua
+    -- for the algorithm.
+    push_mode               = false,
+    push_threshold          = 5,    -- weighted enemies near player
+                                    -- needed to "engage in place" (=
+                                    -- yield from push_monsters back
+                                    -- to kill_monster).
+    push_max_pull_dist      = 50,   -- yards; max cluster scan radius.
+    push_min_cluster_weight = 1,    -- ignore single-mob clusters; raise
+                                    -- to 3+ if you only want to chase
+                                    -- elite/champion packs.
+    push_boss_weight        = 4,    -- per-rank weight in centroid + score
+    push_champion_weight    = 2,
+    push_elite_weight       = 1.5,
+
     debug_mode       = false,
 }
 
@@ -69,6 +88,13 @@ M.update = function ()
     M.glyph_min_level         = bget('pit_glyph_min_level',         1)
     M.glyph_max_level         = bget('pit_glyph_max_level',         100)
     M.level                   = bget('pit_level',                   60)
+    M.push_mode               = bget('pit_push_mode',               false)
+    M.push_threshold          = bget('pit_push_threshold',          5)
+    M.push_max_pull_dist      = bget('pit_push_max_pull_dist',      50)
+    M.push_min_cluster_weight = bget('pit_push_min_cluster_weight', 1)
+    M.push_boss_weight        = bget('pit_push_boss_weight',        4)
+    M.push_champion_weight    = bget('pit_push_champion_weight',    2)
+    M.push_elite_weight       = bget('pit_push_elite_weight',       1.5)
     M.debug_mode              = bget('debug_mode',                  false)
 end
 
