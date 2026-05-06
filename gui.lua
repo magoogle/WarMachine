@@ -248,9 +248,13 @@ gui.elements = {
     --  now drives the WAR PLANS menu via the host's `warplan` API
     --  (warplan.is_ready / get_selectable_now / select_node / confirm).
     --  No more 25 slot sliders or START/CONFIRM coords -- the API sends
-    --  the confirm packet directly.  warplan_show_points / warplan_cp_*
+    --  the confirm packet directly.  warplan_show_points / warplan_cp_s*
     --  GUI elements are gone; their saved hashes will just be inert keys
     --  in the user's settings store.)
+
+    -- Tree wrapper for the remaining pixel-click points (Next-Obj on the
+    -- map + Undercity Open Portal in the tribute UI).
+    warplan_cp_tree     = tree_node:new(1),
 
     -- Map "Next Warplan Objective" button.  Still pixel-clicked because
     -- the host doesn't expose the map's Next-Obj button via API.

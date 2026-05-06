@@ -37,7 +37,9 @@ settings.update_settings = function ()
     settings.use_falling_star = gui.elements.use_falling_star:get()
     settings.use_aoj = gui.elements.use_aoj:get()
     settings.log_level = gui.elements.log_level:get()
-    settings.nav_viz   = gui.elements.nav_viz:get()
+    -- nav_viz toggle was removed from the GUI in the cleanup; the field
+    -- stays defaulted to false at the top of this module so any consumer
+    -- reading settings.nav_viz still sees a sane value.
 end
 
 return settings
