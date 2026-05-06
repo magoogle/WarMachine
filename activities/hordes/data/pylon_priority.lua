@@ -27,67 +27,77 @@
 
 return {
     -- ----- Priority list (top = strongest preference) -----------------------
+    -- Order matches the user-supplied canonical pylons.lua list.  Inline
+    -- comments below each name describe the boon's in-game effect for
+    -- reference -- they don't affect the picker, the picker only looks
+    -- at the position in this array.
     priority = {
-        -- Always-take picks: ChaoticOffering and AetherGoblins are picked
-        -- first whenever offered, regardless of what else is on the panel.
-        -- Both have outsized loot/aether returns vs the standard wave
-        -- modifiers.
-        'ChaoticOffering',
-        'AetherGoblins',
+        -- Always-take picks: outsized loot/aether vs the standard
+        -- wave modifiers.
+        'ChaoticOffering',         -- Chaos Rifts
+        'AetherGoblins',           -- +100% monster HP, Aether Goblins can spawn
 
-        -- Highest-aether-density pylons
-        'GestatingMasses',     -- masses spawn aether lords
-        'EmpoweredCouncil',    -- council grants +15 aether
-        'BlightedSpires',      -- spires spawn aether events
-        'CovetedSpires',       -- 2x aether per spire
-        'TreasuredSpires',     -- 2.25x aether per spire
-        'PreciousSpires',      -- 2.5x aether per spire
-        'HellsWrath',          -- +15-25 aether per wave end
-        'FiendishSpires',      -- spires +3 aether
-        'FiendishMasses',      -- masses spawn aether fiends + aether bonus
-        'PuffingMasses',       -- mass aether bonus
-        'EmpoweredMasses',     -- mass damage + aether bonus
-        'AetherRush',          -- aether grants move speed (more clears/min)
-        'RuthlessLords',       -- aether lords +5 aether
-        'GorgingMasses',       -- chance to spawn another mass on death
-        'MassingMasses',       -- mass HP buff
-        'SurgingHellborne',    -- +1 hellborne, +1 aether per
-        'SkulkingHellborne',   -- hellborne hunting + aether
-        'EmpoweredHellborne',
-        'AmbushingHellborne',
-        'InfernalLords',       -- aether lords spawn + aether
-        'EnduringLords',
-        'ColossalFiends',      -- aether fiends as lords (3x aether)
-        'SurgingElites',
-        'UnstoppableElites',
-        'EmpoweredElites',
-        'UnstableFiends',
+        -- Mass-tier modifiers.
+        'ThrivingMasses',          -- Masses deal unavoidable damage; spawn an Aetheric Mass at wave start
+        'FiendishMasses',          -- Masses spawn aether fiends on death; Aether Masses grant +3 Aether
+        'FiendishLegions',         -- Elite + Aether Fiend dmg +25%; Fiends can spawn in place of Elites
+        'BlisteringHordes',        -- Normal Monster spawn Aether Events 50% faster
+        'SurgingElites',           -- Elite chance doubled; Aether Fiends grant +2 Aether
+        'BlightedVerge',           -- Masses spawn more often; Soulspires spawn less often
+        'UnstoppableElites',       -- Elites are unstoppable; Aether Fiends grant +2 Aether
+        'EmpoweredElites',         -- Elite damage +25%; Aether Fiends grant +2 Aether
+        'MassingMasses',           -- Aetheric Masses +100% HP; chance to spawn more masses on death
+        'GorgingMasses',           -- Slaying Aetheric Masses slows you; chance to spawn another on death
+        'PuffingMasses',           -- Damage from Masses applies Vulnerable; +1 Aether per Mass Offering
+        'EmpoweredMasses',         -- Aetheric Mass dmg +25%; Aetheric Mass grants +1 Aether
 
-        -- Less impactful but harmless picks
-        'SummonedHellborne',
-        'AnchoredMasses',
-        'BlisteringHordes',
+        -- Lord-tier modifiers.
+        'ColossalFiends',          -- Aether Lords cause Hellfire eruptions; Fiends spawn as Lords (3x Aether)
+        'GestatingMasses',         -- Masses spawn an Aether Lord on death; Lords grant +3 Aether
+        'InfernalLords',           -- Aether Lords spawn; grant +3 Aether
+        'RuthlessLords',           -- Aether Lords gain HP/dmg per spawn; grant +5 Aether
+        'InfernalStalker',         -- Infernal demon hunts you; slay for +100 Aether
 
-        -- Generally annoying mechanics, but pick them over nothing
-        'IncreasedEvadeCooldown',
-        'IncreasedPotionCooldown',
-        'ReduceAllResistance',
-        'CorruptingSpires',
-        'DeadlySpires',
-        'GreedySpires',
-        'EnergizingMasses',
-        'ThrivingMasses',
-        'HellishMasses',
-        'BlightedVerge',
-        'DesolateVerge',
-        'TransitiveSpires',
-        'MeteoricHellborne',
-        'RagingHellfire',
-        'InvigoratingHellborne',
-        'ForceChaosWaves',
-        'ForceNextChaosWave',
-        'ForceNoChaosWaves',
-        'InfernalStalker',
+        -- Hellborne modifiers (first chunk).
+        'HellishMasses',           -- Masses explode on death; chance to spawn Hellborne on death
+        'SummonedHellborne',       -- Hellborne can spawn with Aether Events; +1 Aether
+        'AmbushingHellborne',      -- Hellborne can spawn as ambushes; +1 Aether
+
+        -- Force-chaos modifiers.
+        'ForceChaosWaves',         -- Force ALL waves to be Chaos Waves
+        'ForceNextChaosWave',      -- Force next offering to have a Chaos Wave
+        'ForceNoChaosWaves',       -- Turn off all access to Chaos Waves
+
+        -- Wave-end / hellfire / Hellborne (second chunk).
+        'HellsWrath',              -- Hellfire intensifies; +15-25 Aether at end of each wave
+        'SkulkingHellborne',       -- Hellborne hunting you; +1 Aether
+        'SurgingHellborne',        -- +1 Hellborne when spawned; +1 Aether
+        'EmpoweredHellborne',      -- Hellborne damage +25%; +1 Aether
+        'RagingHellfire',          -- Hellfire rains; +3-9 Aether at end of each wave
+        'InvigoratingHellborne',   -- Hellborne damage +25%; slaying invigorates you
+
+        -- Council modifiers.
+        'EmpoweredCouncil',        -- Fell Council damage +50%; Council grants +15 Aether
+        'IncreasedEvadeCooldown',  -- +2s Evade cooldown; Council grants +15 Aether
+        'IncreasedPotionCooldown', -- +2s potion cooldown; Council grants +15 Aether
+        'ReduceAllResistance',     -- All Resist -10%; Council grants +15 Aether
+
+        -- Misc / spire / late tier.
+        'MeteoricHellborne',       -- Hellfire spawns Hellborne; +1 Aether
+        'DeadlySpires',            -- Soulspires drain HP; grant +2 Aether
+        'AetherRush',              -- Normal Monsters dmg +25%; gathering Aether boosts movement speed
+        'EnergizingMasses',        -- Slaying Aetheric Masses slow you; while slowed, UNLIMITED RESOURCES
+        'GreedySpires',            -- Soulspire requires 2x kills; grants 2x Aether
+        'UnstableFiends',          -- Elite damage +25%; Fiends explode and damage foes
+        'EnduringLords',           -- Aether Lords don't despawn at round end; greatly increased HP
+        'CorruptingSpires',        -- Soulspires empower nearby foes; pull enemies inward
+        'BlightedSpires',          -- Soulspires no longer invigorate; spawn aether events
+        'TransitiveSpires',        -- Soulspires double HP; while standing nearby, all kills count as in-range
+        'CovetedSpires',           -- Soulspires spawn less often; grant 2x additional Aether
+        'TreasuredSpires',         -- Soulspires spawn less often; grant 2.25x additional Aether
+        'PreciousSpires',          -- Soulspires spawn less often; grant 2.5x additional Aether
+        'DesolateVerge',           -- Soulspires spawn more often; Masses spawn less often
+        'AnchoredMasses',          -- Aetheric Masses greatly increased atk speed; chance to spawn Soulspire on death
     },
 
     -- ----- Blacklist: boons to skip even when offered -----------------------
