@@ -36,11 +36,37 @@ local START_CYCLE_COOLDOWN_S = 5.0
 local LOOT_GRACE_S           = 10.0   -- wait this long after activity completes
                                        -- before firing next_obj so the player
                                        -- can pick up floor loot
--- Helltide-specific: how long to wait BEFORE deciding the TP failed
--- (we ended up nowhere helltide-y) and how long to wait BEFORE retrying
--- after a failed TP (helltide cycles every ~hour with a few-minute gap).
-local HELLTIDE_TP_VERIFY_S   = 30.0
-local HELLTIDE_TP_RETRY_S    = 300.0  -- 5 min suspension
+-- Helltide-specific failed-TP handling.  Two failure modes covered:
+--   1. Helltide moved zones between when we read its location and when
+--      we landed -- player stuck in an empty overworld zone, no buff.
+--      Fix: re-teleport up to MAX_RETRIES times, each attempt waits
+--      VERIFY_S for the buff before counting as failed.
+--   2. Helltide is between cycles (the ~5-min gap that happens hourly)
+--      -- no helltide is active anywhere; retrying just wastes pulses.
+--      Fix: after MAX_RETRIES consecutive failures, suspend retries
+--      for RETRY_S so the next cycle has time to spawn.
+local HELLTIDE_TP_VERIFY_S    = 30.0
+local HELLTIDE_TP_RETRY_S     = 300.0  -- 5 min suspension after MAX_RETRIES
+local HELLTIDE_TP_MAX_RETRIES = 3
+
+-- Helltide buff probe.  Prefers the host's is_in_helltide() global if
+-- available; falls back to scanning the local player's buff list for
+-- the helltide zone-aura hash (1066539) to remain compatible with
+-- older host builds.
+local function has_helltide_buff()
+    if rawget(_G, 'is_in_helltide') then
+        local ok, ret = pcall(_G.is_in_helltide)
+        if ok and ret == true then return true end
+        if ok then return false end
+    end
+    local lp = get_local_player()
+    if not lp or not lp.get_buffs then return false end
+    for _, b in ipairs(lp:get_buffs() or {}) do
+        local hash = b.name_hash or (b.get_name_hash and b:get_name_hash())
+        if hash == 1066539 then return true end
+    end
+    return false
+end
 
 local function classify_zone(zone)
     if not zone then return 'unknown' end
@@ -77,6 +103,12 @@ local function zone_matches_activity(zone, activity)
     if activity == 'hordes'    then return zc == 'hordes'    end
     if activity == 'boss'      then return zc == 'boss'      end
     if activity == 'turnin'    then return zc == 'temis'     end
+    -- Safety fallback: if the quest name wasn't recognized (activity='unknown')
+    -- but we're already in an activity zone, stay put rather than teleporting.
+    -- Prevents a classify_activity miss from causing a teleport loop.
+    if activity == 'unknown' and zc ~= 'temis' and zc ~= 'overworld' then
+        return true
+    end
     return false
 end
 
@@ -122,6 +154,26 @@ local function fire_start_cycle()
     if settings.debug_mode then
         console.print('[WarMachine] dispatch -> start_cycle')
     end
+end
+
+-- Pit post-boss guard.  The pit WarPlan quest completes the moment the
+-- boss dies, but tasks/pit/post_boss.lua still needs to walk to the
+-- glyph gizmo and run the upgrade sequence.  Without this guard dispatch
+-- would see "zone=pit, activity=<next>" and immediately fire next_obj,
+-- teleporting us out before glyphs are upgraded.
+-- Release once activities.pit.tracker.glyph_done is set (or interact_glyph
+-- is disabled in settings).
+local function pit_post_boss_pending()
+    local zone = get_current_world() and get_current_world():get_current_zone_name() or nil
+    if not zone or not zone:match('^PIT_') then return false end
+    -- tasks/pit/post_boss.lua sets glyph_gizmo_seen=true on first gizmo sight
+    -- and resets it to false inside fire_next_obj_exit() once the upgrade is
+    -- complete and the exit next_obj is already pending.  That window is the
+    -- exact slice we want to block here.
+    if not (tracker.pit and tracker.pit.glyph_gizmo_seen) then return false end
+    local ok, pit_set = pcall(require, 'activities.pit.settings')
+    if ok and pit_set and pit_set.interact_glyph == false then return false end
+    return true
 end
 
 -- Hordes post-boss guard.  After the boss dies the WarPlan objective
@@ -210,6 +262,8 @@ task.shouldExecute = function ()
     if tracker.warplan.next_obj.pending then return false end
     if tracker.warplan.turn_in.pending then return false end
     if tracker.warplan.start_cycle.pending then return false end
+    -- Yield to pit glyph upgrade: boss dead but glyph sequence not done yet.
+    if pit_post_boss_pending() then return false end
     -- Yield to hordes chest-opening even when the WarPlan quest already
     -- considers itself complete.
     if hordes_post_boss_pending() then return false end
@@ -256,35 +310,69 @@ task.Execute = function ()
     if wp and wp.active and wp.quest then
         -- We have an active war plan
         local match = zone_matches_activity(zone, wp.activity)
+
+        -- Helltide TP-verify: covers the "moved zones" case where
+        -- match=true (we're in an overworld zone) but the helltide
+        -- buff never lands -- helltide rotated to a different zone
+        -- between the next-obj read and our arrival.  Without this,
+        -- the dispatcher cleared the attempt stamp on landing and
+        -- the bot wandered around an empty overworld zone forever.
+        --
+        -- Logic:
+        --   buff present -> success; clear attempt + reset attempt
+        --   counter so the next 'wrong zone' warrants a fresh chain.
+        --   buff missing + within VERIFY_S -> still in transit, keep
+        --   waiting (the player might be walking to the ring).
+        --   buff missing + over VERIFY_S + attempts < MAX -> mark
+        --   the attempt stamp nil so the wrong-zone branch re-fires
+        --   next-obj, increment the counter.
+        --   buff missing + over VERIFY_S + attempts >= MAX -> declare
+        --   helltide unavailable, suspend retries for RETRY_S.
+        if wp.activity == 'helltide' then
+            local attempt_t = tracker.warplan.helltide_tp_attempt_at
+            if has_helltide_buff() then
+                if attempt_t or (tracker.warplan.helltide_tp_attempts or 0) > 0 then
+                    if settings.debug_mode then
+                        console.print('[WarMachine] helltide buff acquired -- clearing retry state')
+                    end
+                end
+                tracker.warplan.helltide_tp_attempt_at = nil
+                tracker.warplan.helltide_tp_attempts   = 0
+            elseif attempt_t and (now - attempt_t) > HELLTIDE_TP_VERIFY_S then
+                local attempts = (tracker.warplan.helltide_tp_attempts or 0) + 1
+                tracker.warplan.helltide_tp_attempts   = attempts
+                tracker.warplan.helltide_tp_attempt_at = nil   -- allow next-obj to re-fire
+                if attempts >= HELLTIDE_TP_MAX_RETRIES then
+                    if settings.debug_mode then
+                        console.print(string.format(
+                            '[WarMachine] helltide TP failed %dx -- suspending %ds',
+                            attempts, HELLTIDE_TP_RETRY_S))
+                    end
+                    tracker.warplan.helltide_tp_cooldown_until = now + HELLTIDE_TP_RETRY_S
+                    tracker.warplan.helltide_tp_attempts       = 0   -- reset for after the cooldown
+                else
+                    if settings.debug_mode then
+                        console.print(string.format(
+                            '[WarMachine] helltide TP no-buff after %.0fs -- retry %d/%d',
+                            HELLTIDE_TP_VERIFY_S, attempts, HELLTIDE_TP_MAX_RETRIES))
+                    end
+                    -- Treat as "wrong zone" so the branch below re-fires next-obj.
+                    match = false
+                end
+            end
+            if now < (tracker.warplan.helltide_tp_cooldown_until or 0) then
+                local left = tracker.warplan.helltide_tp_cooldown_until - now
+                task.status = string.format('helltide retry in %.0fs', left)
+                return
+            end
+        end
+
         if not match then
             -- Wrong zone for active activity -> tp (after loot grace)
             if in_loot_grace() then
                 local left = LOOT_GRACE_S - (now - tracker.warplan.activity_completed_at)
                 task.status = string.format('loot grace %.1fs', left)
                 return
-            end
-            -- Helltide failed-TP retry guard: if we recently TP'd for
-            -- helltide and still aren't in a helltide overworld zone
-            -- after HELLTIDE_TP_VERIFY_S, the helltide isn't currently
-            -- active.  Suspend retries for HELLTIDE_TP_RETRY_S (~5 min)
-            -- so the next helltide window has time to spawn.
-            if wp.activity == 'helltide' then
-                local attempt_t = tracker.warplan.helltide_tp_attempt_at
-                if attempt_t and (now - attempt_t) > HELLTIDE_TP_VERIFY_S then
-                    -- We tried, didn't land in a helltide zone -> failed.
-                    if settings.debug_mode then
-                        console.print(string.format(
-                            '[WarMachine] helltide TP failed verify -- waiting %ds',
-                            HELLTIDE_TP_RETRY_S))
-                    end
-                    tracker.warplan.helltide_tp_cooldown_until = now + HELLTIDE_TP_RETRY_S
-                    tracker.warplan.helltide_tp_attempt_at = nil
-                end
-                if now < (tracker.warplan.helltide_tp_cooldown_until or 0) then
-                    local left = tracker.warplan.helltide_tp_cooldown_until - now
-                    task.status = string.format('helltide retry in %.0fs', left)
-                    return
-                end
             end
             if settings.warplan.auto_next_obj
                and now >= tracker.warplan.next_obj_cooldown_until then
@@ -294,12 +382,6 @@ task.Execute = function ()
             end
             task.status = 'wrong zone (auto_next_obj off or cooldown)'
             return
-        end
-
-        -- We landed in a helltide-correct zone -> clear the failed-TP
-        -- attempt stamp so the verify path doesn't penalize us.
-        if wp.activity == 'helltide' then
-            tracker.warplan.helltide_tp_attempt_at = nil
         end
 
         -- In the correct zone for this activity

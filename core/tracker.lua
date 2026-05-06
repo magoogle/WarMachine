@@ -85,6 +85,7 @@ local tracker = {
         -- bumps this to now+300 to suspend re-tries while another
         -- helltide spins up.
         helltide_tp_attempt_at     = nil,    -- t when we last fired Next-Obj for helltide
+        helltide_tp_attempts       = 0,      -- consecutive failed TP attempts (reset on buff acquire)
         helltide_tp_cooldown_until = 0,
     },
 
