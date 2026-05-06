@@ -86,6 +86,38 @@ local function direction_penalty(node, from_pos)
     return penalty
 end
 explorer.direction_penalty = direction_penalty
+
+-- Wall-proximity penalty.  Probes 4 cardinal neighbors at a small offset
+-- and adds penalty units per non-walkable side.  Without this, frontiers
+-- wedged against a wall corner score identically to open-room frontiers
+-- and the explorer keeps picking the corner ones -- bot ends up bouncing
+-- between 0.5y-apart points along a wall edge, gets STUCK, gets unstuck
+-- to the next adjacent wall point, and the cycle repeats (observed in
+-- live logs: 5+ stuck cycles all picking points along x=-172 line).
+--
+-- Cost: 4 utility.is_point_walkeable calls per scored candidate.  Held
+-- down by the caller's pre-check that only invokes wall_penalty when a
+-- candidate could plausibly become the new best after the worst-case
+-- penalty -- for typical perimeters that's a handful of calls per scan,
+-- not all ~192.
+local WALL_PROBE_DIST       = 2.0    -- yards out from the candidate to test
+local WALL_PENALTY_PER_HIT  = 4.0    -- score units per blocked cardinal side
+local WALL_MAX_PENALTY      = 12.0   -- cap so corridors aren't penalized to oblivion
+
+local function wall_penalty(node)
+    if not utility or not utility.is_point_walkeable then return 0 end
+    local x, y, z = node:x(), node:y(), node:z()
+    local hits = 0
+    if not utility.is_point_walkeable(vec3:new(x + WALL_PROBE_DIST, y, z)) then hits = hits + 1 end
+    if not utility.is_point_walkeable(vec3:new(x - WALL_PROBE_DIST, y, z)) then hits = hits + 1 end
+    if not utility.is_point_walkeable(vec3:new(x, y + WALL_PROBE_DIST, z)) then hits = hits + 1 end
+    if not utility.is_point_walkeable(vec3:new(x, y - WALL_PROBE_DIST, z)) then hits = hits + 1 end
+    local p = hits * WALL_PENALTY_PER_HIT
+    if p > WALL_MAX_PENALTY then p = WALL_MAX_PENALTY end
+    return p
+end
+explorer.wall_penalty       = wall_penalty
+explorer.WALL_MAX_PENALTY   = WALL_MAX_PENALTY
 -- Spatial index for fast bbox queries during eviction.  Without this, the
 -- evict pass iterates all 6000+ frontiers per call to find ~50 in the scan box.
 -- Bucket size tuned to scan box (~26 units): one query touches ~4 buckets.
@@ -255,10 +287,15 @@ local pick_closest_frontier = function ()
             remove_frontier(node_str)
         elseif math.abs(fnode:z() - explorer.cur_pos:z()) <= 3 then
             local d = utils.distance(fnode, explorer.cur_pos)
+            -- Pre-check: any wall_penalty only INCREASES the effective
+            -- distance, so if raw d is already worse than the best, skip.
             if closest_dist == nil or d < closest_dist then
-                closest_dist = d
-                closest_node = fnode
-                closest_node_str = node_str
+                local d_adj = d + wall_penalty(fnode)
+                if closest_dist == nil or d_adj < closest_dist then
+                    closest_dist = d_adj
+                    closest_node = fnode
+                    closest_node_str = node_str
+                end
             end
         end
     end
@@ -349,11 +386,16 @@ local select_node_distance = function ()
     -- so we don't keep choosing the same wall-blocked frontier.
     if explorer.wrong_dir_count <= 2 then
         for _, p_node in ipairs(perimeter) do
-            local dist  = utils.distance(p_node, check_pos)
-            local score = dist - direction_penalty(p_node, explorer.cur_pos)
-            if furthest_node == nil or score > furthers_dist then
-                furthest_node = p_node
-                furthers_dist = score
+            local dist      = utils.distance(p_node, check_pos)
+            local raw_score = dist - direction_penalty(p_node, explorer.cur_pos)
+            -- Cheap pre-check: skip wall_penalty when this candidate can't
+            -- beat the current best even without any wall penalty applied.
+            if furthest_node == nil or raw_score > furthers_dist then
+                local score = raw_score - wall_penalty(p_node)
+                if furthest_node == nil or score > furthers_dist then
+                    furthest_node = p_node
+                    furthers_dist = score
+                end
             end
         end
         if furthers_dist ~= nil and furthers_dist < cur_dist then
@@ -372,12 +414,17 @@ local select_node_distance = function ()
                     remove_frontier(most_recent_str)
                 else
                     local frontier_node = explorer.frontier_node[most_recent_str]
-                    local dist  = utils.distance(frontier_node, check_pos)
-                    local score = dist - direction_penalty(frontier_node, explorer.cur_pos)
-                    if furthest_node == nil or score > furthers_dist then
-                        furthest_node = frontier_node
-                        furthers_dist = score
-                        furthest_node_str = most_recent_str
+                    local dist      = utils.distance(frontier_node, check_pos)
+                    local raw_score = dist - direction_penalty(frontier_node, explorer.cur_pos)
+                    -- Same pre-check pattern as the perimeter loop above:
+                    -- only pay for wall_penalty on plausibly-best candidates.
+                    if furthest_node == nil or raw_score > furthers_dist then
+                        local score = raw_score - wall_penalty(frontier_node)
+                        if furthest_node == nil or score > furthers_dist then
+                            furthest_node = frontier_node
+                            furthers_dist = score
+                            furthest_node_str = most_recent_str
+                        end
                     end
                 end
             end

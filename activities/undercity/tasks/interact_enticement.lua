@@ -194,12 +194,14 @@ local function find_enticement()
                 return false
             end
 
-            -- Belt-and-braces: some destructible-style props expose
-            -- is_dead on consumption.  When available, trust it.
-            if a.is_dead then
-                local ok, dead = pcall(function () return a:is_dead() end)
-                if ok and dead then return false end
-            end
+            -- (No is_dead filter.  The host's is_dead predicate is
+            -- defined on every game.object and its return value for
+            -- non-living world props -- switches, levers, hearths --
+            -- is unreliable: some hosts default it to true for objects
+            -- with no health, which silently filtered out every fresh
+            -- SpiritHearth_Switch.  The _confirmed_consumed close-range
+            -- check + tracker.visited cover the "already clicked" case
+            -- without the false-positive risk.)
             return true
         end,
     })

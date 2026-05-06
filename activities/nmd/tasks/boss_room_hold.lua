@@ -31,11 +31,24 @@ local ARRIVE_RADIUS = 4.0   -- "close enough" to the anchor; stop walking
 local ANCHOR_QUIET_S = 4.0  -- continuous "no enemy" time at anchor that
                             -- counts as "boss is dead" -> latch boss_killed_at
 
+-- Latch: nav paused so we sit still at the anchor instead of pumping
+-- move.to_pos every pulse (which makes the navigator arrive, clear,
+-- and let the explorer wander the player off the spot).  Released
+-- whenever shouldExecute returns false so kill_monster can move freely.
+local _at_anchor_paused = false
+
+local function release_anchor()
+    if _at_anchor_paused then
+        move.resume()
+        _at_anchor_paused = false
+    end
+end
+
 task.shouldExecute = function ()
-    if not tracker.boss_seen then return false end
-    if tracker.boss_killed_at then return false end
-    if tracker.dungeon_done   then return false end
-    if not tracker.boss_room_anchor then return false end
+    if not tracker.boss_seen then release_anchor(); return false end
+    if tracker.boss_killed_at then release_anchor(); return false end
+    if tracker.dungeon_done   then release_anchor(); return false end
+    if not tracker.boss_room_anchor then release_anchor(); return false end
     return true
 end
 
@@ -61,9 +74,15 @@ task.Execute = function ()
     local d  = math.sqrt(dx*dx + dy*dy)
 
     if d <= ARRIVE_RADIUS then
-        -- We're at the anchor with no kill target.  Start (or continue)
+        -- We're at the anchor with no kill target.  Pause nav so the
+        -- explorer can't drift us off-spot, and start (or continue)
         -- the "quiet" timer; once we've been quiet for ANCHOR_QUIET_S,
         -- the boss is dead.  Latch boss_killed_at so exit can fire.
+        if not _at_anchor_paused then
+            move.clear()
+            move.pause()
+            _at_anchor_paused = true
+        end
         local now = get_time_since_inject() or 0
         tracker.hold_quiet_started_at = tracker.hold_quiet_started_at or now
         if not tracker.boss_killed_at and (now - tracker.hold_quiet_started_at) >= ANCHOR_QUIET_S then
@@ -76,6 +95,7 @@ task.Execute = function ()
     end
 
     -- Walking back to anchor; reset quiet timer (we left the spot)
+    release_anchor()
     tracker.hold_quiet_started_at = nil
     move.to_pos({ x = a.x, y = a.y, z = pp:z() }, { arrive_radius = ARRIVE_RADIUS })
     task.status = string.format('returning to boss anchor (%.1fm)', d)

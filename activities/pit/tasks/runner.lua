@@ -11,6 +11,11 @@ return runner.make({
     settings    = require 'activities.pit.settings',
     task_files  = {
         'exit',
+        'post_boss_grace',    -- detect boss kill, hold position briefly
+                              -- for loot pickup (sets boss_killed_at).
+                              -- Must run BEFORE upgrade_glyph so we
+                              -- loot the boss-death spot before
+                              -- walking off to the glyph stone.
         'upgrade_glyph',      -- post-boss glyph UI sequence (final floor)
         'floor_portal',       -- descend via PortalSwitch / floor portal
         'shortcut_portal',    -- Charon's bonus loot room (grab before fighting)

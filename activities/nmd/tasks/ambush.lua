@@ -35,6 +35,24 @@ local INTERACT_RANGE  = 3.0
 local ANCHOR_HOLD_R   = 6.0       -- how close to the anchor we hold during survive
 local SCAN_RADIUS_SQ  = 60 * 60
 
+-- Latch: are we currently holding nav paused at the anchor?  Without
+-- this we'd churn move.to_pos(anchor) every pulse; the navigator
+-- arrives, clears the target, the explorer kicks in and wanders the
+-- player toward an exploration frontier, ambush asserts move.to_pos
+-- again on the next pulse, and the bot oscillates back and forth.
+-- Pausing at arrival blocks both the move.tick heartbeat AND the
+-- explorer.  release_anchor() must be called whenever shouldExecute
+-- returns false (other task taking over) or we'd leave nav paused
+-- forever.
+local _at_anchor_paused = false
+
+local function release_anchor()
+    if _at_anchor_paused then
+        move.resume()
+        _at_anchor_paused = false
+    end
+end
+
 -- Substring patterns matched against actor skin name (case-insensitive).
 local NPC_PATTERNS = {
     'le_ambush_step_npc',  -- canonical S09 skin
@@ -164,32 +182,48 @@ local function poll_quest_state()
 end
 
 task.shouldExecute = function ()
-    if not zone.in_dungeon() then return false end
-    -- Master toggle for events.  When off, this task never fires --
-    -- LE_Ambush survivors aren't approached, DE_*/DSQ_* trigger
-    -- areas aren't anchored, kill_monster handles whatever's in
-    -- range as normal but no special positioning is enforced.
-    if settings.do_events == false then return false end
+    if not zone.in_dungeon() then release_anchor(); return false end
+    if settings.do_events == false then release_anchor(); return false end
+    -- Ignore-trigger-events toggle: skip the speak-to-survivor detour
+    -- AND the anchor-hold survive phase.  We still poll quest state so
+    -- ambush_complete latches correctly and the runner can fall through
+    -- to kill_monster / interact_poi for whatever spawns in -- the bot
+    -- just keeps moving the route instead of pinning to the trigger.
+    if settings.ignore_trigger_events then
+        release_anchor()
+        poll_quest_state()
+        return false
+    end
     poll_quest_state()
     -- Pre-trigger: NPC in stream, no quest active yet.  Walk to + click.
     -- ONLY for event types that have an NPC initiation step (LE_Ambush).
     -- DE_*/DSQ_* trigger-area events don't have an NPC -- the quest
     -- appears the moment the player walks into the trigger zone.
     if not tracker.ambush_started then
-        return find_npc() ~= nil
+        local has = find_npc() ~= nil
+        if not has then release_anchor() end
+        return has
     end
     -- During survive phase: hold the anchor IF nothing else needs us
     -- (kill_monster has higher priority and will preempt for mobs).
     if not tracker.ambush_complete then
-        if find.any_enemy_in_range(settings.kill_range or 25) then return false end
+        if find.any_enemy_in_range(settings.kill_range or 25) then
+            release_anchor()
+            return false
+        end
         -- Only assert anchor-hold for events that have a real survive/wave
         -- phase (objective text contains "survive").  DSQ_* investigation
         -- quests (e.g. ForgottenRemains: examine corpses) have no waves;
         -- yielding here lets interact_poi/kill_monster drive them naturally.
         local q = quest_state.read_event()
-        if not q or not q.in_survive_phase then return false end
-        return tracker.ambush_anchor ~= nil
+        if not q or not q.in_survive_phase then
+            release_anchor()
+            return false
+        end
+        if tracker.ambush_anchor == nil then release_anchor(); return false end
+        return true
     end
+    release_anchor()
     return false
 end
 
@@ -286,13 +320,23 @@ task.Execute = function ()
     if not a then return end
     local dx, dy = pp:x() - a.x, pp:y() - a.y
     local d = math.sqrt(dx*dx + dy*dy)
-    -- Always assert the anchor as the move target.  move.to_pos returns
-    -- 'arrived' and calls move.clear() when d <= arrive_radius, stopping
-    -- any residual nav path left over from a previous task.
-    move.to_pos({ x = a.x, y = a.y, z = pp:z() }, { arrive_radius = ANCHOR_HOLD_R })
+
     if d <= ANCHOR_HOLD_R then
+        -- Pause nav so neither the active move target nor the explorer
+        -- can yank the player off the anchor while we ride out the
+        -- wave.  Clear any in-flight target first so resume() doesn't
+        -- pick up where we left off.
+        if not _at_anchor_paused then
+            move.clear()
+            move.pause()
+            _at_anchor_paused = true
+        end
         task.status = 'holding ambush anchor'
     else
+        -- Drifted out (knockback / ground-effect dodge / first arrival).
+        -- Resume nav and route back.
+        release_anchor()
+        move.to_pos({ x = a.x, y = a.y, z = pp:z() }, { arrive_radius = ANCHOR_HOLD_R })
         task.status = string.format('returning to anchor (%.1fm)', d)
     end
 end

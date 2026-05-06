@@ -85,9 +85,13 @@ local ACTIVITY_PATTERNS = {
     { pat = 'BeastInIce',       activity = 'boss'      },
     { pat = 'MegaDemon',        activity = 'boss'      },   -- Beast alt naming
     { pat = 'Harbinger',        activity = 'boss'      },
+    { pat = 'Harby',            activity = 'boss'      },   -- abbreviated form in BossLair quests
     { pat = 'Urivar',           activity = 'boss'      },
     { pat = 'Belial',           activity = 'boss'      },
     { pat = 'Butcher',          activity = 'boss'      },
+    -- Generic BossLair prefix: covers any WarPlans_QST_BossLair_* quest not
+    -- matched by a specific boss name above (e.g. future bosses).
+    { pat = 'BossLair',         activity = 'boss'      },
 }
 
 local function classify_activity(name)

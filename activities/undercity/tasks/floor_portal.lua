@@ -78,17 +78,31 @@ end
 -- True if there's any unvisited beacon/hearth in stream we should click
 -- before descending.  When `do_enticements` is off the user has opted
 -- out, so this gate is disabled.
+--
+-- Mirrors interact_enticement.find_enticement's hearth-cap filter so
+-- this gate and that task agree on "is there something clickable?".
+-- Without the mirror, hitting the hearth cap with only hearths in
+-- stream produces a deadlock: enticements_pending says yes (no cap
+-- check) -> floor_portal yields -> interact_enticement yields (cap)
+-- -> nothing claims the pulse and the bot stops descending.
 local function enticements_pending()
     if settings.do_enticements == false then return false end
     if settings.speed_run and (tracker.hearth_count or 0) >= (settings.max_hearths or 4) then
         return false
     end
+    local cap_reached = (tracker.hearth_count or 0) >= (settings.max_hearths or 4)
     local cand = find.closest({
         patterns             = BLOCKING_PATTERNS,
         require_interactable = false,
         source               = 'all',
         visited              = tracker.visited,
         visited_prefix       = 'enticement',
+        filter               = function (a)
+            if not cap_reached then return true end
+            local sn = a.get_skin_name and a:get_skin_name() or ''
+            -- At cap, hearths no longer count as "pending"; beacons still do.
+            return sn:lower():find('spirithearth', 1, true) == nil
+        end,
     })
     return cand ~= nil
 end

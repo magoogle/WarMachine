@@ -20,6 +20,7 @@ local task_manager     = require 'core.task_manager'
 local external         = require 'core.external'
 local tracker          = require 'core.tracker'
 local warplan_state    = require 'core.warplan_state'
+local warplan_dump     = require 'core.warplan_dump'
 local mode             = require 'core.mode'
 local activity_manager = require 'core.activity_manager'
 local alfred_bridge    = require 'core.alfred_bridge'
@@ -100,6 +101,16 @@ local main_pulse = function ()
     debounce_time = get_time_since_inject()
 
     settings:update_settings()
+
+    -- Debug: one-shot WAR PLANS panel dump button.  Checked before the
+    -- enabled/keybind gate so it works even when WarMachine is paused
+    -- (the user opens the vendor manually, clicks the button, gets a
+    -- console dump of every node + reward + selectable state).
+    if gui.elements.debug_dump_warplan_button
+       and gui.elements.debug_dump_warplan_button:get()
+    then
+        warplan_dump.dump()
+    end
 
     if not local_player then return end
 
@@ -255,6 +266,38 @@ local render_pulse = function ()
         local ay = math.floor(H * (sw.whisper_accept_y_frac or 0.85))
         draw_crosshair(rx, ry, 'Whisper Reward', color_green(220))
         draw_crosshair(ax, ay, 'Whisper Accept', color_red(220))
+    end
+
+    -- "New Plan" reroll click-point overlay.  Same fractional-coord
+    -- pattern as the whispers overlay so the user dials these in by
+    -- opening the WAR PLANS panel manually and adjusting sliders until
+    -- the crosshairs sit on the New Plan button + its confirm dialog.
+    if settings.warplan and settings.warplan.show_new_plan_points then
+        local sw = settings.warplan
+        local W, H = get_screen_width(), get_screen_height()
+        local nx = math.floor(W * (sw.new_plan_x_frac         or 0))
+        local ny = math.floor(H * (sw.new_plan_y_frac         or 0))
+        local cx = math.floor(W * (sw.new_plan_confirm_x_frac or 0))
+        local cy = math.floor(H * (sw.new_plan_confirm_y_frac or 0))
+        if nx > 0 and ny > 0 then
+            draw_crosshair(nx, ny, 'New Plan',         color_yellow(220))
+        end
+        if cx > 0 and cy > 0 then
+            draw_crosshair(cx, cy, 'New Plan Confirm', color_orange(220))
+        end
+    end
+
+    -- Undercity Obelisk Open Portal click-point overlay.  These coords
+    -- are stored as raw pixels (0-3840 / 0-2160) rather than fractions
+    -- because the underlying click is fired via utility.send_mouse_click
+    -- with absolute coords -- the overlay just echoes those pixels back
+    -- so the user can verify alignment.
+    if settings.undercity and settings.undercity.show_click_points then
+        local cp = settings.undercity.click_points
+            and settings.undercity.click_points.open_portal or nil
+        if cp and cp.x and cp.x > 0 and cp.y and cp.y > 0 then
+            draw_crosshair(cp.x, cp.y, 'UC Open Portal', color_cyan(220))
+        end
     end
 
     if not local_player or not settings.enabled then return end

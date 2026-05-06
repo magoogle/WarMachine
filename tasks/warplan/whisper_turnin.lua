@@ -94,8 +94,23 @@ local INTER_ATTEMPT_S      = 1.5     -- pause between failed retries (let panel 
 local MAX_RETRIES          = 3
 
 -- Per-zone latch so we don't re-attempt after a successful turn-in
--- this town visit.  Reset when the player leaves the zone.
-local last_zone_handled = nil
+-- THIS town visit.  Cleared when the player leaves the zone we last
+-- handled, so the next return trip can claim a freshly-ready bounty.
+-- Without the leave-tracking, the latch stuck across every subsequent
+-- TP back to town and Whispers got skipped indefinitely while the bot
+-- went off to run more pits.
+local last_zone_handled  = nil
+local last_observed_zone = nil
+
+local function update_zone_latch(cur_zone)
+    if cur_zone == last_observed_zone then return end
+    -- Zone changed.  If we just left the zone where we'd handled
+    -- whispers, drop the latch -- a future return is a new visit.
+    if last_observed_zone == last_zone_handled then
+        last_zone_handled = nil
+    end
+    last_observed_zone = cur_zone
+end
 
 local function reset_state()
     task.state               = nil
@@ -177,6 +192,10 @@ task.shouldExecute = function ()
 
     local cur_zone = zone.current()
     if not cur_zone then return false end
+
+    -- Drop the per-visit latch when the player leaves and re-enters
+    -- the zone we last handled in.
+    update_zone_latch(cur_zone)
 
     -- Already turned in this visit; wait for a zone change.
     if last_zone_handled == cur_zone then return false end

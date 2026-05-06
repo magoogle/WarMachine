@@ -39,6 +39,13 @@ local M = {
     -- this many seconds before giving up on the current zone.
     leave_zone_grace = 30,
 
+    -- Loot grace after a chest opens.  While this timer runs, nav stays
+    -- paused so the player stands still and Looteer (or any auto-pickup
+    -- plugin) can vacuum the drops.  Without this the priority queue
+    -- handed back the next POI the moment the chest went non-interactable
+    -- and the bot walked off mid-loot.
+    chest_grace_secs = 4,
+
     -- Debug
     debug_mode       = false,
 }
@@ -63,6 +70,7 @@ M.update = function ()
     M.auto_mount         = bget('helltide_auto_mount',       true)
     M.kill_range         = bget('helltide_kill_range',       25)
     M.leave_zone_grace   = bget('helltide_leave_zone_grace', 30)
+    M.chest_grace_secs   = bget('helltide_chest_grace_secs',  4)
     -- Debug mode is shared with WarMachine's master debug toggle
     M.debug_mode         = bget('debug_mode',                false)
 end

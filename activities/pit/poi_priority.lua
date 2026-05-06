@@ -17,6 +17,8 @@
 -- All filtered through tracker.visited dedup.
 -- ---------------------------------------------------------------------------
 
+local catalog = require 'core.catalog'
+
 local M = {}
 
 local POI_REBUILD_INTERVAL_S = 1.5
@@ -33,12 +35,10 @@ local TYPE_WEIGHT = {
 local DEFAULT_WEIGHT = 80
 local DISTANCE_COEFF = 0.5
 
-local EXCLUDED_KINDS = {
-    champion = true,
-    elite    = true,
-    boss     = true,
-    miniboss = true,
-}
+-- Enemy-kind filter is now applied centrally in core.catalog.get_actors().
+-- See its DESIGN NOTE for the architectural rationale -- this is the
+-- WarMachine-side stop-gap until WarPath does per-run isolation for
+-- procedural dungeons.
 
 local function dist2_player(poi)
     local lp = get_local_player()
@@ -51,8 +51,6 @@ local function dist2_player(poi)
 end
 
 local function score_poi(poi, ctx)
-    if EXCLUDED_KINDS[poi.kind or ''] then return nil end
-
     -- Visited dedup
     local key = string.format('%s:%d:%d',
         poi.skin or poi.kind or '?',
@@ -87,13 +85,13 @@ M.build = function (tracker, settings)
         return tracker.poi_cache
     end
     local out = {}
-    if not StaticPatherPlugin or not StaticPatherPlugin.get_actors then
+    if not catalog.is_available() then
         tracker.poi_cache = out
         tracker.last_poi_rebuild_t = now
         return out
     end
-    local actors = StaticPatherPlugin.get_actors()
-    if not actors or #actors == 0 then
+    local actors = catalog.get_actors()
+    if #actors == 0 then
         tracker.poi_cache = out
         tracker.last_poi_rebuild_t = now
         return out

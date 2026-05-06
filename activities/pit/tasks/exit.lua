@@ -24,8 +24,26 @@ local function in_pit()
     return n and n:sub(1, 4) == 'PIT_'
 end
 
+-- If the glyph gizmo was expected but never found/used within this
+-- many seconds after boss kill, give up and exit so the run doesn't stall.
+local GLYPH_WAIT_TIMEOUT_S = 90
+
 task.shouldExecute = function ()
     if not in_pit() then return false end
+
+    -- Safety valve: if boss has been dead a long time and glyph_done
+    -- never flipped (gizmo permanently out of reach or already upgraded
+    -- manually and the gizmo vanished), treat it as done so we can exit.
+    if tracker.boss_killed_at and not tracker.glyph_done
+       and settings.interact_glyph ~= false
+    then
+        local elapsed = (get_time_since_inject() or 0) - tracker.boss_killed_at
+        if elapsed >= GLYPH_WAIT_TIMEOUT_S then
+            tracker.glyph_done   = true
+            tracker.glyph_done_t = get_time_since_inject() or 0
+        end
+    end
+
     -- Run-complete triggers gate on the universal 15s loot grace
     -- (core.exit_grace.MIN_GRACE_S) so any post-kill drops have time
     -- to be picked up before we tear down.  The completion timestamp

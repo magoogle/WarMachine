@@ -23,6 +23,18 @@ local boss_data = require 'activities.boss.data.boss_data'
 
 local task = { name = 'walk_boss_room', status = 'idle' }
 
+-- Latch: pause nav while sitting at the altar anchor so we don't pump
+-- move.to_pos every pulse (which arrives, clears, then lets the
+-- explorer drift the player around the room between waves).
+local _at_anchor_paused = false
+
+local function release_anchor()
+    if _at_anchor_paused then
+        move.resume()
+        _at_anchor_paused = false
+    end
+end
+
 local function any_chest_visible()
     if not actors_manager or not actors_manager.get_all_actors then return false end
     for _, a in pairs(actors_manager:get_all_actors()) do
@@ -44,10 +56,10 @@ local function any_enemy_in_range()
 end
 
 task.shouldExecute = function ()
-    if not tracker.altar_activated then return false end
-    if not tracker.altar_position  then return false end
-    if any_chest_visible()         then return false end
-    if any_enemy_in_range()        then return false end
+    if not tracker.altar_activated then release_anchor(); return false end
+    if not tracker.altar_position  then release_anchor(); return false end
+    if any_chest_visible()         then release_anchor(); return false end
+    if any_enemy_in_range()        then release_anchor(); return false end
     return true
 end
 
@@ -58,11 +70,20 @@ task.Execute = function ()
     if not anchor then task.status = 'no anchor'; return end
     local pp = lp:get_position()
     local d  = math.sqrt((anchor:x() - pp:x())^2 + (anchor:y() - pp:y())^2)
-    -- Already at anchor (within tether range)
+    -- Already at anchor (within tether range): pause nav so neither
+    -- the lingering move target nor the explorer pulls us around the
+    -- room between waves.  Resume on departure (kill_monster preempts
+    -- via shouldExecute() seeing an enemy in range).
     if d <= settings.boss_room_tether then
+        if not _at_anchor_paused then
+            move.clear()
+            move.pause()
+            _at_anchor_paused = true
+        end
         task.status = string.format('at anchor (%.0fm)', d)
         return
     end
+    release_anchor()
     move.to_pos(vec3:new(anchor:x(), anchor:y(), anchor:z() or pp:z()))
     task.status = string.format('walking to altar anchor (%.0fm)', d)
 end

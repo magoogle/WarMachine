@@ -107,7 +107,16 @@ task.Execute = function ()
     if actor.is_interactable and actor:is_interactable() then
         if orbwalker and orbwalker.set_clear_toggle then orbwalker.set_clear_toggle(false) end
         interact_object(actor)
-        tracker.mark_visited(target)
+        if target.kind ~= 'objective' then
+            -- Chests / shrines are single-use; mark visited right away.
+            tracker.mark_visited(target)
+        else
+            -- Objectives (doors, blockers) may need a key or multiple
+            -- steps.  Soft-stale so kill_monster gets a turn between
+            -- retries, but don't mark visited until the actor is gone
+            -- from stream (door opened / blocker removed).
+            picker.mark_stale(target)
+        end
         task.waiting_key     = nil
         task.waiting_first_t = nil
         task.status = 'interacted: ' .. target.kind

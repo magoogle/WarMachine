@@ -115,6 +115,21 @@ local function score_poi(poi, ctx)
         if not ctx.settings.do_shrines then return nil end
     elseif effective_kind == 'objective' or effective_kind == 'carry_object' then
         if not ctx.settings.do_objectives then return nil end
+        -- Skip sealed doors and gates whose position is currently not
+        -- walkable (objective-sealed boss-room doors, etc.).  This breaks
+        -- the 6s soft-stale retry loop for permanently-blocked entries.
+        -- NOTE: Blocker-type actors (key-gated side rooms) are intentionally
+        -- excluded from this check -- the bot should keep retrying them
+        -- ("interact/kill until the key drops") so they stay in the queue.
+        local sn_lower = (poi.skin or ''):lower()
+        if (sn_lower:find('door', 1, true) or sn_lower:find('gate', 1, true))
+           and not sn_lower:find('blocker', 1, true)
+           and utility and utility.is_point_walkeable
+        then
+            local probe = vec3:new(poi.x or 0, poi.y or 0, poi.z or ctx.player_z)
+            local wok, walkable = pcall(utility.is_point_walkeable, probe)
+            if wok and not walkable then return nil end
+        end
     end
 
     local weight = TYPE_WEIGHT[effective_kind] or DEFAULT_WEIGHT
@@ -129,7 +144,13 @@ M.build = function (tracker, settings)
         return tracker.poi_cache
     end
     local out = {}
-    local ctx = { visited = tracker.visited, settings = settings }
+    local player_z = 0
+    local lp = get_local_player and get_local_player()
+    if lp then
+        local lp_pos = lp:get_position()
+        if lp_pos then player_z = lp_pos:z() end
+    end
+    local ctx = { visited = tracker.visited, settings = settings, player_z = player_z }
 
     -- Catalog scan: portals, chests, shrines, and any objectives that
     -- the recorder has already classified.  Many dungeons have partial

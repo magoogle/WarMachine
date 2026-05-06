@@ -22,6 +22,16 @@ local navigator = {
     blacklisted_spell_node = {},
     unstuck_nodes = {},
     unstuck_count = 0,
+    -- Persistent-stuck escalation: track consecutive `unstuck EXHAUSTED`
+    -- events at roughly the same player position.  Each cycle takes ~1s,
+    -- so 3 in a row means we've been physically blocked for ~3s without
+    -- moving despite picking new targets.  At that point we promote to
+    -- trap state so the outer activity layer (HelltideRevamped, etc.)
+    -- can teleport away rather than waiting the full 30s+ trap detection
+    -- window for the bbox heuristic to fire.
+    unstuck_exhaust_streak    = 0,
+    unstuck_exhaust_pos       = nil,
+    unstuck_exhaust_t         = -math.huge,
     pathfind_fail_count = 0,
     pathfind_area_cooldown = -1,   -- wall-clock time after which pathfinding is allowed again
     pathfind_replan_cooldown = -1, -- wall-clock time after which a *successful* replan is allowed
@@ -533,6 +543,39 @@ local unstuck = function (local_player)
                 end
             end
         end
+
+        -- Persistent-stuck escalation.  If the previous exhaustion was
+        -- at roughly the same position within the last 4s, we've been
+        -- physically blocked through multiple unstuck-and-replan
+        -- cycles without actually moving.  After 3 in a row, force the
+        -- trap state so HR / the activity layer can teleport us away.
+        local now = get_time_since_inject() or 0
+        local same_spot = false
+        if pos and navigator.unstuck_exhaust_pos
+           and (now - navigator.unstuck_exhaust_t) < 4
+        then
+            local dx = pos:x() - navigator.unstuck_exhaust_pos.x
+            local dy = pos:y() - navigator.unstuck_exhaust_pos.y
+            same_spot = (dx*dx + dy*dy) < 16   -- < 4u radius
+        end
+        if same_spot then
+            navigator.unstuck_exhaust_streak = (navigator.unstuck_exhaust_streak or 0) + 1
+        else
+            navigator.unstuck_exhaust_streak = 1
+        end
+        navigator.unstuck_exhaust_pos = pos and { x = pos:x(), y = pos:y() } or nil
+        navigator.unstuck_exhaust_t   = now
+
+        if navigator.unstuck_exhaust_streak >= 3 and not navigator.trapped then
+            console.print('[unstuck] persistent-stuck (streak=' .. navigator.unstuck_exhaust_streak ..
+                ') -- promoting to trap state for outer recovery')
+            navigator.trapped              = true
+            navigator.trapped_since        = now
+            navigator.trapped_escape_count = 0
+            navigator.trapped_last_escape_time = -math.huge
+            navigator.unstuck_exhaust_streak = 0
+        end
+
         navigator.target = select_target(navigator.target)
         navigator.is_custom_target = false
         navigator.unstuck_nodes = {}
@@ -1153,6 +1196,17 @@ navigator.move = function ()
             local node_dist = -1
             local new_path = {}
             local selected = false
+            -- Distance from current player position to the active target.
+            -- Used as the "progress" reference: a candidate spell-node is
+            -- only valid if teleporting to it puts the player CLOSER to
+            -- the target than they are right now.  Without this guard,
+            -- utils.distance is undirected and a node sitting BEHIND the
+            -- player (engine pathfinder snap-to-mesh, or a waypoint we
+            -- walked past without coming within the 1u consume threshold)
+            -- passes the `>= movement_step` check identically to a forward
+            -- node — the spell fires backward and the bot rubber-bands.
+            local target = navigator.target
+            local cur_to_target = (target ~= nil) and utils.distance(cur_node, target) or nil
             for _, node in ipairs(navigator.path) do
                 local dist = utils.distance(node, cur_node)
                 local node_str = utils.vec_to_string(node)
@@ -1160,8 +1214,13 @@ navigator.move = function ()
                     new_path[#new_path+1] = node
                     selected = true
                 elseif navigator.blacklisted_spell_node[node_str] == nil and
-                    -- move to nodes that is >= movement step 
-                    utils.distance(node, cur_node) >= navigator.movement_step
+                    -- move to nodes that is >= movement step
+                    dist >= navigator.movement_step and
+                    -- and is forward progress (closer to target than we are now).
+                    -- When there's no target, fall back to permissive behaviour;
+                    -- the explorer's freeroam loop always sets one before this
+                    -- block runs, so the nil-target branch is mostly defensive.
+                    (cur_to_target == nil or utils.distance(node, target) < cur_to_target)
                 then
                     spell_node = node
                     node_dist = dist
@@ -2085,6 +2144,12 @@ navigator.clear_trap_state = function()
     navigator.trap_pos_history     = {}  -- fresh start so we don't re-fire instantly
     navigator.trap_pos_sample_time = -1
     navigator.trap_post_escape_grace_until = -1
+    -- Persistent-stuck streak is also tied to the (now stale) location
+    -- we just teleported away from; reset so the new zone gets a clean
+    -- counter and doesn't immediately re-promote on its first exhaust.
+    navigator.unstuck_exhaust_streak = 0
+    navigator.unstuck_exhaust_pos    = nil
+    navigator.unstuck_exhaust_t      = -math.huge
     -- Long-term trap-traversal blacklist is per-zone; teleporting away
     -- invalidates it (those gizmos may not even exist in the new zone).
     navigator.trap_blacklisted_trav = {}

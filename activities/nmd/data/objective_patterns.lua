@@ -37,4 +37,16 @@ return {
     -- Boss-room glyphstone (NMD glyph upgrade)
     'NMD_GlyphStone',
     'Awakened_Glyphstone',
+
+    -- DSQ (Dungeon Side Quest) investigation interactables.
+    -- These are named after the zone theme, not the quest prefix,
+    -- so they won't match event_prefix() heuristic in ambush.lua.
+    -- The is_interactable() filter in poi_priority's live scan is
+    -- sufficient to avoid clicking already-examined corpses.
+    'Corpse_Naha_',
+    'Corpse_Scos_',
+    'Corpse_Kehj_',
+    'Corpse_Hawe_',
+    'Corpse_Frac_',
+    'Corpse_Step_',
 }

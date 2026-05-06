@@ -53,6 +53,14 @@ local _engaged_key       = nil
 local _last_interact_t   = -math.huge
 local _engage_started_t  = -math.huge
 
+-- Post-open loot grace.  When a chest opens we want the player to stand
+-- still long enough for Looteer (or any external auto-pickup plugin) to
+-- vacuum drops.  Without this the priority queue immediately handed
+-- back the next POI and nav walked us off mid-loot.  Stamped in
+-- Execute() the moment we observe the chest go non-interactable, then
+-- shouldExecute keeps yielding (combat-aware) until the timer expires.
+local _loot_grace_until_t = -math.huge
+
 local function poi_key(p)
     return string.format('%s:%d:%d',
         p.skin or p.kind or '?',
@@ -70,8 +78,13 @@ local function helltide_pyre_fallback(live_skin, poi)
 end
 
 local function find_helltide_actor(poi)
+    -- 'both' (ally + all) -- helltide chests / Tortured Gifts / pyres are
+    -- world-object actors, not ally-side, so 'ally' alone silently misses
+    -- them and the task false-flags the POI as "opened/cleared" the first
+    -- time it tries to find the live actor at INTERACT_RADIUS.  Same fix
+    -- applied to poi_priority.build's live scan.
     return live_actor.find(poi, {
-        scan_lists  = 'ally',
+        scan_lists  = 'both',
         match_mode  = 'exact',
         extra_match = helltide_pyre_fallback,
     })
@@ -109,6 +122,22 @@ local function combat_nearby()
 end
 
 task.shouldExecute = function ()
+    -- Loot grace: chest just opened, hold the spot while drops settle.
+    -- Yields to combat so adds don't get a free hit on a stationary
+    -- player; otherwise we own the pulse with nav paused.
+    local now = get_time_since_inject() or 0
+    if now < _loot_grace_until_t then
+        if combat_nearby() then
+            -- Combat preempts: release the pause so kill_monster can
+            -- move freely, but keep the grace deadline -- if the bot
+            -- finishes combat before the deadline, shouldExecute will
+            -- re-pause for the remainder.
+            move.resume()
+            return false
+        end
+        return true
+    end
+
     local q = poi_priority.build(tracker, settings, tracker.in_maiden)
     local target = picker.pick(q)
     if not target then return false end
@@ -125,6 +154,16 @@ task.Execute = function ()
     if not lp then return end
     local pp = lp:get_position()
     if not pp then return end
+
+    -- Loot-grace phase: stand still while drops settle.  shouldExecute
+    -- already gated combat preemption + grace expiry; if we're here we
+    -- own the pulse and just need to keep nav paused.
+    local now = get_time_since_inject() or 0
+    if now < _loot_grace_until_t then
+        if not move.is_paused() then move.pause() end
+        task.status = string.format('looting (%.1fs)', _loot_grace_until_t - now)
+        return
+    end
 
     local q = poi_priority.build(tracker, settings, tracker.in_maiden)
     local target = picker.pick(q, { player_pos = pp })
@@ -173,7 +212,18 @@ task.Execute = function ()
         -- Live actor gone -> the chest was either opened by us a moment
         -- ago (confirms successful interact) or never had a live actor
         -- to begin with (catalog stamp from a prior session).  Either way
-        -- mark visited and move on.
+        -- mark visited and move on.  If we were actively engaged (i.e.
+        -- the player just opened a chest), arm the loot grace so the
+        -- bot stands still long enough for Looteer to vacuum drops.
+        if _engaged_key and (target.kind == 'chest'
+            or target.kind == 'chest_helltide_random'
+            or target.kind == 'chest_helltide_targeted'
+            or target.kind == 'chest_helltide_silent')
+        then
+            local grace = settings.chest_grace_secs or 4
+            _loot_grace_until_t = (get_time_since_inject() or 0) + grace
+            move.pause()
+        end
         tracker.mark_visited(target)
         reset_engagement()
         task.status = target.kind .. ' opened/cleared'
@@ -193,8 +243,18 @@ task.Execute = function ()
     local now = get_time_since_inject() or 0
 
     -- Chest opened (or transitioned to non-interactable for any reason).
-    -- Mark visited and clean up.
+    -- Mark visited, arm loot grace, clean up.  Grace only applies to
+    -- chest-kind POIs; ores/herbs/shrines don't drop loot piles.
     if not (actor.is_interactable and actor:is_interactable()) then
+        if target.kind == 'chest'
+            or target.kind == 'chest_helltide_random'
+            or target.kind == 'chest_helltide_targeted'
+            or target.kind == 'chest_helltide_silent'
+        then
+            local grace = settings.chest_grace_secs or 4
+            _loot_grace_until_t = (get_time_since_inject() or 0) + grace
+            move.pause()
+        end
         tracker.mark_visited(target)
         reset_engagement()
         task.status = target.kind .. ' opened'

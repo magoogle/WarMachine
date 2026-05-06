@@ -11,6 +11,12 @@ local tracker = {
 
     -- Boss + chest state
     boss_seen                = false,
+    boss_seen_at             = nil,    -- monotonic seconds when boss_seen first
+                                       -- flipped true.  Used by kill_monster to
+                                       -- hold auto-attack for boss_intro_delay
+                                       -- so the boss-intro mechanics play out
+                                       -- before we start swinging (mirrors the
+                                       -- original WonderCity boss_delay gate).
     boss_killed_at           = nil,
     chest_looted             = false,
     chest_looted_t           = nil,    -- monotonic seconds when flipped done;
@@ -30,6 +36,7 @@ tracker.reset_run = function ()
     tracker.current_floor  = 1
     tracker.last_world_id  = nil
     tracker.boss_seen      = false
+    tracker.boss_seen_at   = nil
     tracker.boss_killed_at = nil
     tracker.chest_looted   = false
     tracker.chest_looted_t = nil

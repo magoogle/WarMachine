@@ -90,14 +90,16 @@ M.make = function (cfg)
     end
 
     task.Execute = function ()
-        if orbwalker and orbwalker.set_clear_toggle then
-            orbwalker.set_clear_toggle(true)
-        end
-
-        -- Hijack short-circuit: chase + burst the special target if any.
+        -- Hijack short-circuit (special non-enemy targets like the
+        -- boss-altar Suppressor barrier) bypasses the boss-intro gate
+        -- because hijacks aren't auto-attack -- they're directed
+        -- positioning that we want to fire even during the intro.
         if target_hijack then
             local h = target_hijack()
             if h then
+                if orbwalker and orbwalker.set_clear_toggle then
+                    orbwalker.set_clear_toggle(true)
+                end
                 move.to_actor(h)
                 task.status = 'hijack: ' ..
                     (h.get_skin_name and h:get_skin_name() or 'unknown')
@@ -113,17 +115,49 @@ M.make = function (cfg)
         -- Boss-seen latch.  Two trigger paths -- the host's is_boss
         -- predicate (always honored) plus optional skin patterns
         -- (catches pit/undercity bosses that don't flip is_boss
-        -- the same frame they spawn).
+        -- the same frame they spawn).  Also stamps `<boss_seen_field>_at`
+        -- with the wall clock so the boss-intro gate below can hold
+        -- auto-attack for the configured grace.
         if tracker and not tracker[boss_seen_field] then
             local boss_match = target_module.is_boss(enemy)
                 or (boss_patterns and looks_like(skin, boss_patterns))
             if boss_match then
                 tracker[boss_seen_field] = true
+                tracker[boss_seen_field .. '_at'] = get_time_since_inject() or 0
                 if settings.debug_mode then
                     console.print(string.format('[%s] boss seen: %s',
                         debug_label, tostring(skin)))
                 end
             end
+        end
+
+        -- Boss intro delay.  Bosses in NMD / Pit / Undercity have a
+        -- short vulnerability-transition window after they spawn where
+        -- attacking too early wastes DPS or desyncs mechanics.  When
+        -- settings.boss_intro_delay > 0 and we're inside that window,
+        -- hold orbwalker off and stop walking -- but stay on the kill
+        -- pulse so freeroam doesn't pull us off the boss.  The original
+        -- WonderCity / SigilRunner / ArkhamAsylum plugins all had this;
+        -- it was previously declared in our settings but never wired up.
+        local intro_delay = settings.boss_intro_delay or 0
+        if intro_delay > 0
+           and tracker and tracker[boss_seen_field .. '_at']
+        then
+            local seen_at = tracker[boss_seen_field .. '_at']
+            local elapsed = (get_time_since_inject() or 0) - seen_at
+            if elapsed < intro_delay then
+                if orbwalker and orbwalker.set_clear_toggle then
+                    orbwalker.set_clear_toggle(false)
+                end
+                move.clear()
+                task.status = string.format('boss intro delay (%.1fs)',
+                    intro_delay - elapsed)
+                return
+            end
+        end
+
+        if orbwalker and orbwalker.set_clear_toggle then
+            orbwalker.set_clear_toggle(true)
         end
 
         -- In-range short-circuit -- DON'T pull the walker toward an

@@ -158,6 +158,7 @@ gui.elements = {
     nmd_do_objectives              = cb(true, 'nmd_do_objectives'),
     nmd_do_cursed_shrines          = cb(true, 'nmd_do_cursed_shrines'),
     nmd_do_events                  = cb(true, 'nmd_do_events'),
+    nmd_ignore_trigger_events      = cb(false,'nmd_ignore_trigger_events'),
     nmd_exit_after_boss            = cb(true, 'nmd_exit_after_boss'),
     nmd_kill_range                 = si(5,   60,   25, 'nmd_kill_range'),
     nmd_boss_intro_delay           = si(0,   30,    3, 'nmd_boss_intro_delay'),
@@ -244,6 +245,24 @@ gui.elements = {
     warplan_whisper_accept_y_pct = si(0, 100, 85, 'warplan_whisper_accept_y_pct'),
     warplan_show_whisper_points  = cb(false, 'warplan_show_whisper_points'),
 
+    -- "New Plan" reroll click points -- used by the warplan picker when
+    -- DFS finds no Nightmare-free path through the current tree (every
+    -- 5-pick path passes through an NMD node).  Two clicks: the panel
+    -- "New Plan" button, then the confirm dialog that follows.  Both
+    -- expressed as %-of-screen so the same numbers work across
+    -- resolutions; defaults are 0/0 (off) -- the user dials them in
+    -- with the show-overlay toggle, the picker skips reroll entirely
+    -- if either coord is 0.
+    warplan_new_plan_x_pct          = si(0, 100, 0, 'warplan_new_plan_x_pct'),
+    warplan_new_plan_y_pct          = si(0, 100, 0, 'warplan_new_plan_y_pct'),
+    warplan_new_plan_confirm_x_pct  = si(0, 100, 0, 'warplan_new_plan_confirm_x_pct'),
+    warplan_new_plan_confirm_y_pct  = si(0, 100, 0, 'warplan_new_plan_confirm_y_pct'),
+    warplan_show_new_plan_points    = cb(false,    'warplan_show_new_plan_points'),
+    -- Cap on how many reroll attempts the picker will burn before
+    -- giving up.  Avoids spinning gold/resource forever if the user's
+    -- settings or the live UI block the click flow.
+    warplan_max_rerolls             = si(0, 10, 5, 'warplan_max_rerolls'),
+
     -- (Vendor-menu picker click points removed: tasks/warplan/test_select.lua
     --  now drives the WAR PLANS menu via the host's `warplan` API
     --  (warplan.is_ready / get_selectable_now / select_node / confirm).
@@ -262,9 +281,10 @@ gui.elements = {
     warplan_cp_nextobj_y  = si(0, 2160, 960, 'warplan_cp_nextobj_y'),
 
     -- Undercity entry click point (Undercity Obelisk tribute UI -> Open Portal)
-    undercity_auto_enter       = cb(true, 'undercity_auto_enter'),
-    undercity_cp_open_portal_x = si(0, 3840, 0, 'undercity_cp_open_portal_x'),
-    undercity_cp_open_portal_y = si(0, 2160, 0, 'undercity_cp_open_portal_y'),
+    undercity_auto_enter         = cb(true, 'undercity_auto_enter'),
+    undercity_cp_open_portal_x   = si(0, 3840, 0, 'undercity_cp_open_portal_x'),
+    undercity_cp_open_portal_y   = si(0, 2160, 0, 'undercity_cp_open_portal_y'),
+    undercity_show_click_points  = cb(false,    'undercity_show_click_points'),
 
     -- Pit entry settings. ArkhamAsylum standalone uses the legacy Cerrigar
     -- Pit Crafter; WarMachine drives the new Skov_Temis Pit Obelisk path
@@ -277,6 +297,13 @@ gui.elements = {
     -- Debug
     debug_tree = tree_node:new(2),
     debug_mode = cb(false, 'debug_mode'),
+    -- One-shot dump of the live WAR PLANS panel state to console.  Use
+    -- when the auto-picker chose something unexpected -- prints every
+    -- node's id / name / reward / selectable state / neighbors so we
+    -- can see exactly what get_selectable_now() returned and why the
+    -- Nightmare filter did or didn't match.  Player must be at the
+    -- vendor with the panel open for the API to return data.
+    debug_dump_warplan_button = btn('debug_dump_warplan'),
 }
 
 gui.render = function ()
@@ -397,6 +424,24 @@ gui.render = function ()
         gui.elements.warplan_show_whisper_points:render('Show whisper click points',
             'Draw crosshairs at the configured Reward + Accept click points ' ..
             'so you can verify they line up with the in-game UI.')
+
+        render_menu_header('"New Plan" reroll click points (used when every legal path runs through Nightmare Dungeons). Coords are %-of-screen so the same numbers work across resolutions; defaults are 0/0 -- the picker skips reroll entirely until both pairs are dialed in.')
+        gui.elements.warplan_max_rerolls:render('Max rerolls',
+            'Cap on how many "New Plan" attempts the picker burns before ' ..
+            'giving up.  0 disables the reroll path entirely (picker just ' ..
+            'aborts when the tree is NMD-locked).')
+        gui.elements.warplan_new_plan_x_pct:render('New Plan button X%',
+            'X position of the "New Plan" button on the WAR PLANS panel as a percent of screen width.')
+        gui.elements.warplan_new_plan_y_pct:render('New Plan button Y%',
+            'Y position of the "New Plan" button.')
+        gui.elements.warplan_new_plan_confirm_x_pct:render('New Plan confirm X%',
+            'X position of the dialog confirm button (the "yes, generate a fresh tree" prompt that pops after clicking New Plan).')
+        gui.elements.warplan_new_plan_confirm_y_pct:render('New Plan confirm Y%',
+            'Y position of the New Plan confirm button.')
+        gui.elements.warplan_show_new_plan_points:render('Show New Plan click points',
+            'Draw crosshairs at the configured New Plan + confirm click ' ..
+            'points so you can verify them against the live UI.')
+
         gui.elements.warplan_auto_cycle:render('Auto-start war plan',
             'When no war plan is active and you are in Temis, walk to Warplans_Vendor ' ..
             'and open the menu. Covers the first start (fresh WarMachine enable) and ' ..
@@ -418,6 +463,11 @@ gui.render = function ()
             'Screen X for the "Open Portal" button on the Undercity Obelisk tribute menu')
         gui.elements.undercity_cp_open_portal_y:render('Open Portal Y',
             'Screen Y for the "Open Portal" button')
+        gui.elements.undercity_show_click_points:render('Show Undercity click points',
+            'Draw a crosshair at the configured Open Portal pixel coords ' ..
+            'so you can verify it lines up with the in-game button.  ' ..
+            'Open the Undercity Obelisk tribute menu manually first; ' ..
+            'the overlay is screen-position-only, no auto-click.')
 
         gui.elements.warplan_cp_tree:pop()
     end
@@ -499,6 +549,13 @@ gui.render = function ()
             'waves), DE_* / DSQ_* (walk into trigger zone, kill mobs).  ' ..
             'When off, the bot ignores event triggers and walks past ' ..
             'them.  kill_monster still engages any mobs that aggro.')
+        gui.elements.nmd_ignore_trigger_events:render('Ignore trigger events',
+            'Skip the anchor-hold survive phase for ambush-style events ' ..
+            'spawned by shrines, healing wells, and other random triggers. ' ..
+            'kill_monster still engages whatever aggros, but the bot ' ..
+            'keeps walking the route instead of pinning to the trigger ' ..
+            'point.  Leaves "Do events" alone for events that need an ' ..
+            'NPC click or interactable to progress (those still fire).')
         render_menu_header('Run lifecycle')
         gui.elements.nmd_exit_after_boss:render('Exit after boss', 'reset_all_dungeons after the boss kill')
         gui.elements.nmd_auto_reset_after:render('Auto-reset after (s)', 'Safety net')
@@ -603,6 +660,12 @@ gui.render = function ()
 
     if gui.elements.debug_tree:push('Debug') then
         gui.elements.debug_mode:render('Debug mode', 'Verbose console logging')
+        gui.elements.debug_dump_warplan_button:render('Dump WarPlan panel',
+            'Open the WAR PLANS vendor menu first, then click this to ' ..
+            'print every node (id, name, reward, selectable, neighbors) ' ..
+            'and the current selected path to console.  Use when the ' ..
+            'auto-picker is choosing the wrong activity to figure out ' ..
+            'how the host is naming each node.', 0)
         gui.elements.debug_tree:pop()
     end
 

@@ -26,6 +26,21 @@ local M = {
                                  -- without engaging.  kill_monster still
                                  -- fires for any mobs that aggro.
 
+    ignore_trigger_events = false,
+                                 -- When true, ambush.lua skips the anchor-
+                                 -- hold survive phase entirely.  Some random
+                                 -- "trigger events" (shrines, healing wells,
+                                 -- map-event campfires that aren't tagged as
+                                 -- core LE_Ambush survivors) spawn waves the
+                                 -- bot doesn't actually need to clear --
+                                 -- standing still for them just slows the
+                                 -- run.  With this on, kill_monster still
+                                 -- engages whatever's in range, but the bot
+                                 -- keeps walking the route instead of
+                                 -- pinning to the trigger point.  Pure
+                                 -- LE_Ambush NPC initiation is also skipped
+                                 -- (no "speak to survivors" detour).
+
     auto_reset_after  = 900,     -- s; NMDs can run longer than pits
     exit_after_boss   = true,
 
@@ -48,6 +63,7 @@ M.update = function ()
     M.do_objectives    = bget('nmd_do_objectives',    true)
     M.do_cursed_shrines = bget('nmd_do_cursed_shrines', true)
     M.do_events         = bget('nmd_do_events',         true)
+    M.ignore_trigger_events = bget('nmd_ignore_trigger_events', false)
     M.auto_reset_after = bget('nmd_auto_reset_after', 900)
     M.exit_after_boss  = bget('nmd_exit_after_boss',  true)
     M.debug_mode       = bget('debug_mode',           false)

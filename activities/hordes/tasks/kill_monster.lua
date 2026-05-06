@@ -45,8 +45,13 @@ local function actor_matches_directive(directive, skin, special)
     if directive == 'miniboss'         then return skin:find('Miniboss',   1, true) ~= nil end
     if directive == 'lord'             then return special end   -- aether lords spawn as elites
     if directive == 'hellborne'        then return special end   -- hellborne are champion/elite-ranked
-    if directive == 'boss'             then return skin:find('boss', 1, false) ~= nil
-                                          or skin:find('Bartuc', 1, true) ~= nil
+    -- 'boss' directive: ONLY the three Council members + Bartuc, the
+    -- four enemies that live in the boss room post-portal.  We
+    -- intentionally don't match generic 'boss' substring here -- skins
+    -- like BSK_skeleton_boss / BSK_cannibal_brute_boss / BSK_elias_boss
+    -- are wave-script spawns in the arena, not the actual end boss; tier
+    -- 2 still picks them up via the BSK_*_boss family check below.
+    if directive == 'boss'             then return skin:find('Bartuc',  1, true) ~= nil
                                           or skin:find('Council', 1, true) ~= nil end
     if directive == 'aether_structure' then return skin:find('BonusAether', 1, true) ~= nil end
     -- aether_collect targets currency drops, not enemies; nothing to promote

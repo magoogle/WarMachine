@@ -28,16 +28,20 @@ local tracker = {
         -- activity change, disables all on warplan complete.
         active_sub_plugin = nil,    -- 'sigilrunner' / 'helltide' / 'wondercity' / 'arkhamasylum' / nil
 
-        -- Auto-select click sequence state (the 15-slot grid + START + Confirm)
+        -- Auto-select state machine (drives the WAR PLANS panel via the
+        -- warplan API; coords for the optional "New Plan" reroll click
+        -- live in settings.warplan.new_plan_*_frac).
         test = {
-            pending      = false,
-            step         = 0,
-            current_slot = 1,
-            timer        = 0,
-            baseline     = 0,
-            start_pos_x  = nil,
-            start_pos_y  = nil,
-            result       = nil,
+            pending                  = false,
+            step                     = 0,
+            current_slot             = 1,
+            timer                    = 0,
+            baseline                 = 0,
+            start_pos_x              = nil,
+            start_pos_y              = nil,
+            result                   = nil,
+            reroll_count             = 0,
+            reroll_confirm_fired_at  = nil,
         },
 
         -- Tab + map-click Next-Obj sequence (poll-style verify)

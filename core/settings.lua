@@ -86,6 +86,19 @@ settings.update_settings = function ()
     settings.warplan.show_whisper_points   = gui.elements.warplan_show_whisper_points
                                                 and gui.elements.warplan_show_whisper_points:get()
                                                 or false
+    -- "New Plan" reroll click points -- the picker uses these only when
+    -- DFS finds no Nightmare-free path through the live tree.  Defaults
+    -- of 0 leave reroll disabled until the user dials them in.
+    settings.warplan.new_plan_x_frac          = pct_frac(gui.elements.warplan_new_plan_x_pct,         0)
+    settings.warplan.new_plan_y_frac          = pct_frac(gui.elements.warplan_new_plan_y_pct,         0)
+    settings.warplan.new_plan_confirm_x_frac  = pct_frac(gui.elements.warplan_new_plan_confirm_x_pct, 0)
+    settings.warplan.new_plan_confirm_y_frac  = pct_frac(gui.elements.warplan_new_plan_confirm_y_pct, 0)
+    settings.warplan.show_new_plan_points     = gui.elements.warplan_show_new_plan_points
+                                                    and gui.elements.warplan_show_new_plan_points:get()
+                                                    or false
+    settings.warplan.max_rerolls              = gui.elements.warplan_max_rerolls
+                                                    and gui.elements.warplan_max_rerolls:get()
+                                                    or 5
     -- Vendor-menu picker pixel coords were removed when the WAR PLANS
     -- menu migrated to the warplan API.  Only Next-Objective survives
     -- as a click point because the host doesn't expose the map button.
@@ -106,6 +119,9 @@ settings.update_settings = function ()
             label = 'Open Portal',
         },
     }
+    settings.undercity.show_click_points = gui.elements.undercity_show_click_points
+                                                and gui.elements.undercity_show_click_points:get()
+                                                or false
 
     -- Pit entry (war-plan Pit entry from Skov_Temis Pit Obelisk).
     -- Standalone Pit (ArkhamAsylum) still uses legacy Cerrigar; this

@@ -231,14 +231,30 @@ M.build = function (tracker, settings, maiden_active)
     -- aren't in the catalog (sparse zones, rotation variants, etc.).
     -- Runs every build() cycle alongside the catalog scan so zones with
     -- zero catalog data still populate the queue as chests come into view.
-    if actors_manager and actors_manager.get_ally_actors then
-        for _, a in pairs(actors_manager:get_ally_actors()) do
+    --
+    -- Source: actors_manager:get_all_actors().  Tortured Gifts and helltide
+    -- chests are world-object actors, NOT ally-side -- get_ally_actors()
+    -- silently filtered them out, which is why the bot walked past
+    -- visible Tortured Gifts at 190 cinders in user-reported logs.
+    -- Cross-checked against HelltideRevamped's chest scan, which uses
+    -- the same all-actors source and successfully picks up Gifts.
+    --
+    -- Skin patterns:
+    --   usz_rewardGizmo_*       Tortured Gifts (cinder-cost, weight 1000)
+    --   usz_silentChest_*       Silent chests (key-required, weight 700)
+    --   Helltide_RewardChest_*  Regular helltide random chests (75 cinders,
+    --                           weight 800)
+    --   Pyre_Helltide*          Maiden pyres (weight 600 / +500 in maiden)
+    if actors_manager and actors_manager.get_all_actors then
+        for _, a in pairs(actors_manager:get_all_actors()) do
             local sn = a.get_skin_name and a:get_skin_name() or ''
             local kind = nil
             if sn:find('usz_rewardGizmo', 1, true) then
                 kind = 'chest_helltide_targeted'
             elseif sn:find('usz_silentChest', 1, true) then
                 kind = 'chest_helltide_silent'
+            elseif sn:find('Helltide_RewardChest', 1, true) then
+                kind = 'chest_helltide_random'
             elseif sn:find('Pyre_Helltide', 1, true) then
                 kind = 'pyre'
             end

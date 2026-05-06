@@ -13,8 +13,23 @@
 local kill_task = require 'core.kill_task'
 local settings  = require 'activities.helltide.settings'
 
+local HELLTIDE_BUFF_HASH = 1066539
+
+local function is_in_helltide()
+    local lp = get_local_player()
+    if not lp or not lp.get_buffs then return false end
+    for _, b in ipairs(lp:get_buffs() or {}) do
+        local hash = b.name_hash or (b.get_name_hash and b:get_name_hash())
+        if hash == HELLTIDE_BUFF_HASH then return true end
+    end
+    return false
+end
+
 return kill_task.make({
-    name        = 'kill_monster',
-    settings    = settings,
-    debug_label = 'Helltide',
+    name         = 'kill_monster',
+    settings     = settings,
+    -- Don't fight outside the helltide ring.  Outside the ring the bot
+    -- should be navigating back in, not chasing enemies.
+    extra_should = is_in_helltide,
+    debug_label  = 'Helltide',
 })

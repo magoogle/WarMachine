@@ -6,6 +6,15 @@ local tracker = {
     in_wave         = false,    -- true when monsters are spawning; false at choice phase
     last_pylon_pick = nil,
     run_start_t     = nil,
+    -- Wave-completion latch.  Mirrors HordeDev's tracker.locked_door_found
+    -- pattern: once we observe BSK_MapIcon_LockedDoor in stream WITHOUT
+    -- the in-wave sigil, the wave loop is over and the bot can route to
+    -- the boss room.  Until then, walk_boss_room stays anchored at the
+    -- wave-arena center even if the quest parser thinks the directive
+    -- is 'boss' (which can happen when the host returns the Council/
+    -- Bartuc objective text alongside the wave objectives -- our
+    -- pattern matcher might pick up the boss noun before it should).
+    locked_door_seen = false,
     -- Run-state flags driving the end-of-run handoff.  Set by their
     -- respective tasks; consumed by exit.lua + WarPlan supervisor.
     boss_killed     = false,    -- detected when a boss-tier actor disappears post-engage
@@ -36,6 +45,7 @@ tracker.reset_run = function ()
     tracker.current_wave    = 0
     tracker.in_wave         = false
     tracker.last_pylon_pick = nil
+    tracker.locked_door_seen = false
     tracker.boss_killed         = false
     tracker.chest_opened        = false
     tracker.chest_opened_count  = 0

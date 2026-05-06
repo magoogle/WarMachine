@@ -48,6 +48,14 @@ local function find_locked_door()
         if sn == 'DGN_Standard_Door_Lock_Sigil_Ancients_Zak_Evil' then in_wave = true end
     end
     if in_wave or not locked then return nil end
+    -- Latch the wave-completion flag here too so the gate works
+    -- regardless of which of (this task, walk_boss_room) ran first.
+    if not tracker.locked_door_seen then
+        tracker.locked_door_seen = true
+        if settings.debug_mode then
+            console.print('[Hordes] locked-door latch flipped (interact_boss_portal)')
+        end
+    end
     return door
 end
 
@@ -71,7 +79,16 @@ end
 task.shouldExecute = function ()
     if not settings.do_boss_portals then return false end
     if tracker.boss_killed then return false end       -- already past portal
-    if find_locked_door() ~= nil then return true end  -- door comes first
+    -- Defense in depth: the locked-door latch in walk_boss_room
+    -- requires BOTH the door icon AND the absence of the in-wave
+    -- sigil before declaring waves complete.  Honoring it here too
+    -- protects against an unreliable in-wave-sigil reading -- if
+    -- find_locked_door() fires a false positive (icon up but the
+    -- in-wave sigil intermittently dropped), we won't run the bot
+    -- at the door mid-wave.  Once walk_boss_room latches the flag,
+    -- both tasks agree the wave loop is over.
+    local door = find_locked_door()
+    if door ~= nil and tracker.locked_door_seen then return true end
     return find_portal(settings.prefer_bartuc) ~= nil  -- then pylons
 end
 

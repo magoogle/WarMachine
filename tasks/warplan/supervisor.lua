@@ -27,18 +27,16 @@ local task = { name = 'warplan_supervisor', status = nil }
 -- ---------------------------------------------------------------------------
 -- Post-boss pit guard.
 --
--- The pit warplan quest completes the moment the boss dies (the host
--- removes it from the quest log).  That makes wp.active flip false ~5s
--- BEFORE ArkhamAsylum has had a chance to walk to the glyph gizmo + run
--- its upgrade UI.  Without a guard, the supervisor would see "wp inactive
--- but ArkhamAsylum still on -> disable it" and yank ArkhamAsylum out from
--- under upgrade_glyph -- the bot stands next to the gizmo doing nothing
--- because no plugin is enabled to drive the interaction.
+-- The pit WarPlan quest completes the moment the boss dies (the host
+-- removes it from the quest log).  That makes wp.active flip false before
+-- tasks/pit/post_boss.lua has walked to the glyph gizmo + run its upgrade
+-- UI.  Without this guard the supervisor would see "wp inactive -> disable
+-- sub-plugin" and dispatch would immediately fire next_obj, teleporting us
+-- to the next WarPlan objective before any glyphs are upgraded.
 --
--- Guard: while we're in PIT_*, the gizmo has been spotted, and ArkhamAsylum
--- hasn't signalled glyph_done yet, refuse to disable any sub-plugin.  Once
--- glyph_done is true, post_boss.lua takes over and disables ArkhamAsylum
--- explicitly + fires Next-Obj for exit.
+-- Guard: while we're in PIT_*, tracker.pit.glyph_gizmo_seen is true (set
+-- by post_boss.lua on first gizmo sight, cleared when it fires next_obj),
+-- refuse to fire any sub-plugin transitions or dispatch.
 -- ---------------------------------------------------------------------------
 local function in_pit_zone()
     local w = get_current_world()
@@ -48,21 +46,13 @@ end
 
 local function pit_post_boss_pending()
     if not in_pit_zone() then return false end
-    -- Have we entered the post-boss window?  post_boss.lua sets
-    -- glyph_gizmo_seen=true the first frame the gizmo shows up.
+    -- post_boss.lua sets glyph_gizmo_seen=true when the gizmo first appears and
+    -- resets it to false inside fire_next_obj_exit() when the upgrade is done.
+    -- That window is exactly what we need to block here.
     if not (tracker.pit and tracker.pit.glyph_gizmo_seen) then return false end
-    -- Need ArkhamAsylum's is_glyph_done() to know when to release.
-    -- If it isn't exposed (older ArkhamAsylum without the v0.2 facade
-    -- update), DO NOT engage the guard -- otherwise we'd trap the bot in
-    -- pit forever waiting for a signal that never comes.  Fall through to
-    -- the original pre-fix behavior (supervisor disables when wp.active
-    -- flips off).  User must update ArkhamAsylum/core/external.lua to
-    -- benefit from the post-boss fix.
-    if not (ArkhamAsylumPlugin and ArkhamAsylumPlugin.is_glyph_done) then
-        return false
-    end
-    -- Guard active until ArkhamAsylum signals upgrade complete.
-    return not ArkhamAsylumPlugin.is_glyph_done()
+    local ok, pit_set = pcall(require, 'activities.pit.settings')
+    if ok and pit_set and pit_set.interact_glyph == false then return false end
+    return true
 end
 
 -- ---------------------------------------------------------------------------
@@ -164,6 +154,10 @@ local function in_activity_zone(zone, activity)
     if activity == 'pit'       then return zc == 'pit'       end
     if activity == 'hordes'    then return zc == 'hordes'    end
     if activity == 'boss'      then return zc == 'boss'      end
+    -- Safety fallback: unrecognized quest name -> stay put in any non-hub zone.
+    if activity == 'unknown' and zc ~= 'temis' and zc ~= 'overworld' then
+        return true
+    end
     return false
 end
 
@@ -226,7 +220,7 @@ task.shouldExecute = function ()
         return false
     end
 
-    -- Pit post-boss guard: don't touch sub-plugins while ArkhamAsylum is
+    -- Pit post-boss guard: don't touch sub-plugins while post_boss.lua is
     -- mid-upgrade.  See pit_post_boss_pending() comment.
     if pit_post_boss_pending() then return false end
 
