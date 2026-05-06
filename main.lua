@@ -31,8 +31,10 @@ local rotation_bridge  = require 'core.rotation_bridge'
 -- on_update / on_render / on_render_menu handlers and publishes the
 -- WarMachineNav global (plus a `BatmobilePlugin` back-compat alias so
 -- external consumers like Alfred and Reaper keep working until they
--- migrate to the new name).
-require 'core.nav'
+-- migrate to the new name).  Explicit `core.nav.init` path -- the
+-- host's package loader doesn't honour Lua's standard `dir/init.lua`
+-- convention.
+require 'core.nav.init'
 
 local local_player, player_position
 local debounce_time    = nil
