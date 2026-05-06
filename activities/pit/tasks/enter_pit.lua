@@ -12,9 +12,14 @@
 --   * we're not in a hub town
 -- ---------------------------------------------------------------------------
 
-local move     = require 'core.move'
-local settings = require 'activities.pit.settings'
-local tracker  = require 'activities.pit.tracker'
+local move       = require 'core.move'
+local settings   = require 'activities.pit.settings'
+local tracker    = require 'activities.pit.tracker'
+-- Tier (1..150) -> SNO map.  utility.open_pit_portal(...) takes the
+-- portal asset's SNO ID, NOT the tier number -- they're not the same
+-- value.  See data/pit_levels.lua for the full mapping (e.g. tier 51
+-- -> 0x1C3554, tier 100 -> 0x1C35C1).
+local pit_levels = require 'data.pit_levels'
 
 local CRAFTER_SKIN = 'TWN_Kehj_IronWolves_PitKey_Crafter'
 local PORTAL_SKIN  = 'EGD_MSWK_World_Portal_01'
@@ -87,13 +92,21 @@ task.Execute = function ()
             return
         end
         if utility and utility.open_pit_portal then
-            -- pit_levels is a SNO->level map; the host wants the SNO of the
-            -- desired tier.  We rely on the WarMachine GUI's pit_level
-            -- slider being a DIRECT SNO value (matches the legacy
-            -- ArkhamAsylum convention).
-            local ok = pcall(utility.open_pit_portal, settings.level)
+            -- Translate the GUI's tier (1..150) into the SNO the host
+            -- API actually consumes.  Passing the raw tier silently no-
+            -- ops the call -- the bot interacts with the obelisk, the
+            -- menu opens, but no portal spawns.  Mirrors the WarPlan-
+            -- side path in tasks/pit/enter.lua.
+            local addr = pit_levels[settings.level]
+            if not addr then
+                task.status = 'invalid pit level ' .. tostring(settings.level)
+                return
+            end
+            local ok = pcall(utility.open_pit_portal, addr)
             task.debounce_t = now
-            task.status = ok and 'opening pit portal' or 'open_pit_portal failed'
+            task.status = ok
+                and string.format('opening pit %d (sno=0x%X)', settings.level, addr)
+                or  'open_pit_portal failed'
         else
             task.status = 'utility.open_pit_portal not available'
         end
