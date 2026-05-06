@@ -18,6 +18,7 @@
 
 local enums       = require 'activities.helltide.data.enums'
 local quest_state = require 'activities.helltide.quest_state'
+local catalog     = require 'core.catalog'
 
 local M = {}
 
@@ -181,14 +182,18 @@ M.build = function (tracker, settings, maiden_active)
     end
 
     local out = {}
-    if not StaticPatherPlugin or not StaticPatherPlugin.get_actors then
+    if not catalog.is_available() then
         tracker.poi_cache = out
         tracker.last_poi_rebuild_t = now
         return out
     end
 
-    local actors = StaticPatherPlugin.get_actors()   -- all kinds, current zone
-    if not actors or #actors == 0 then
+    -- core.catalog strips enemy-kind entries (champion / elite / boss /
+    -- miniboss) so stale catalog enemies from prior runs of this zone
+    -- don't get queued as POIs.  Live combat targets come from the
+    -- host actor stream via core.target -- the catalog adds nothing.
+    local actors = catalog.get_actors()
+    if #actors == 0 then
         tracker.poi_cache = out
         tracker.last_poi_rebuild_t = now
         return out
@@ -240,6 +245,15 @@ M.build = function (tracker, settings, maiden_active)
             if kind then
                 local ap = a.get_position and a:get_position()
                 if ap then
+                    -- Tortured Gift memory: stamp the position whenever
+                    -- we see one so we can re-evaluate it after we accrue
+                    -- cinders, even if the actor leaves the live stream
+                    -- when the bot walks elsewhere.
+                    if kind == 'chest_helltide_targeted' then
+                        tracker.remember_gift({
+                            skin = sn, x = ap:x(), y = ap:y(), z = ap:z(),
+                        })
+                    end
                     local live_poi = {
                         kind = kind, skin = sn,
                         x = ap:x(), y = ap:y(), z = ap:z(),
@@ -253,6 +267,49 @@ M.build = function (tracker, settings, maiden_active)
                             live_actor = a,   -- stash so interact_poi can skip the stream search
                         }
                     end
+                end
+            end
+        end
+    end
+
+    -- Re-score remembered Tortured Gifts.  This is what unlocks the
+    -- "come back later when we have cinders" behaviour: a Gift sighted
+    -- earlier at 75/150 cinders was filtered out of the queue then,
+    -- but its position lives in tracker.remembered_gifts.  Now that
+    -- ctx.cinders has grown, score_poi's affordability gate may pass
+    -- and the Gift gets queued -- bot walks back to it.  Visited
+    -- entries get pruned here so the table doesn't accumulate.
+    for key, g in pairs(tracker.remembered_gifts) do
+        if tracker.visited[key] then
+            tracker.remembered_gifts[key] = nil
+        else
+            -- Skip if already added by the live-stream scan above
+            -- (avoid double-queueing).  Cheap: O(N) over the small
+            -- per-pulse out[] list.
+            local dup = false
+            for i = 1, #out do
+                local e = out[i]
+                if e.kind == 'chest_helltide_targeted'
+                   and math.floor(e.x) == math.floor(g.x)
+                   and math.floor(e.y) == math.floor(g.y)
+                then dup = true; break end
+            end
+            if not dup then
+                local poi = {
+                    kind = 'chest_helltide_targeted', skin = g.skin,
+                    x = g.x, y = g.y, z = g.z,
+                }
+                local s, d = score_poi(poi, ctx)
+                if s then
+                    out[#out + 1] = {
+                        kind  = 'chest_helltide_targeted', skin = g.skin,
+                        x = g.x, y = g.y, z = g.z,
+                        score = s, dist = d,
+                        -- no live_actor; interact_poi will resolve it
+                        -- via live_actor.find when within range, and
+                        -- mark visited if the actor isn't there
+                        -- (already opened by another player, etc.)
+                    }
                 end
             end
         end
