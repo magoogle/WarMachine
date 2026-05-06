@@ -86,53 +86,15 @@ settings.update_settings = function ()
     settings.warplan.show_whisper_points   = gui.elements.warplan_show_whisper_points
                                                 and gui.elements.warplan_show_whisper_points:get()
                                                 or false
-    settings.warplan.show_click_points  = gui.elements.warplan_show_points:get()
-
-    -- Row Y values are shared across the 5 slots in each row -- the
-    -- vendor-menu cards in a row sit at the same screen height in-game,
-    -- so independent Y per slot was busywork.  See gui.lua warplan_cp_row*_y.
-    -- Slot index = (row - 1) * 5 + column,  1..25 across the 5x5 grid.
-    local row1_y = gui.elements.warplan_cp_row1_y:get()
-    local row2_y = gui.elements.warplan_cp_row2_y:get()
-    local row3_y = gui.elements.warplan_cp_row3_y:get()
-    local row4_y = gui.elements.warplan_cp_row4_y:get()
-    local row5_y = gui.elements.warplan_cp_row5_y:get()
+    -- Vendor-menu picker pixel coords were removed when the WAR PLANS
+    -- menu migrated to the warplan API.  Only Next-Objective survives
+    -- as a click point because the host doesn't expose the map button.
     settings.warplan.click_points = {
-        slots = {
-            -- Row 1 (red)
-            { x = gui.elements.warplan_cp_s1_x:get(),  y = row1_y, label = '1'  },
-            { x = gui.elements.warplan_cp_s2_x:get(),  y = row1_y, label = '2'  },
-            { x = gui.elements.warplan_cp_s3_x:get(),  y = row1_y, label = '3'  },
-            { x = gui.elements.warplan_cp_s4_x:get(),  y = row1_y, label = '4'  },
-            { x = gui.elements.warplan_cp_s5_x:get(),  y = row1_y, label = '5'  },
-            -- Row 2 (green)
-            { x = gui.elements.warplan_cp_s6_x:get(),  y = row2_y, label = '6'  },
-            { x = gui.elements.warplan_cp_s7_x:get(),  y = row2_y, label = '7'  },
-            { x = gui.elements.warplan_cp_s8_x:get(),  y = row2_y, label = '8'  },
-            { x = gui.elements.warplan_cp_s9_x:get(),  y = row2_y, label = '9'  },
-            { x = gui.elements.warplan_cp_s10_x:get(), y = row2_y, label = '10' },
-            -- Row 3 (yellow)
-            { x = gui.elements.warplan_cp_s11_x:get(), y = row3_y, label = '11' },
-            { x = gui.elements.warplan_cp_s12_x:get(), y = row3_y, label = '12' },
-            { x = gui.elements.warplan_cp_s13_x:get(), y = row3_y, label = '13' },
-            { x = gui.elements.warplan_cp_s14_x:get(), y = row3_y, label = '14' },
-            { x = gui.elements.warplan_cp_s15_x:get(), y = row3_y, label = '15' },
-            -- Row 4 (cyan)
-            { x = gui.elements.warplan_cp_s16_x:get(), y = row4_y, label = '16' },
-            { x = gui.elements.warplan_cp_s17_x:get(), y = row4_y, label = '17' },
-            { x = gui.elements.warplan_cp_s18_x:get(), y = row4_y, label = '18' },
-            { x = gui.elements.warplan_cp_s19_x:get(), y = row4_y, label = '19' },
-            { x = gui.elements.warplan_cp_s20_x:get(), y = row4_y, label = '20' },
-            -- Row 5 (orange)
-            { x = gui.elements.warplan_cp_s21_x:get(), y = row5_y, label = '21' },
-            { x = gui.elements.warplan_cp_s22_x:get(), y = row5_y, label = '22' },
-            { x = gui.elements.warplan_cp_s23_x:get(), y = row5_y, label = '23' },
-            { x = gui.elements.warplan_cp_s24_x:get(), y = row5_y, label = '24' },
-            { x = gui.elements.warplan_cp_s25_x:get(), y = row5_y, label = '25' },
+        next_objective = {
+            x     = gui.elements.warplan_cp_nextobj_x:get(),
+            y     = gui.elements.warplan_cp_nextobj_y:get(),
+            label = 'Next Obj',
         },
-        start          = { x = gui.elements.warplan_cp_start_x:get(),   y = gui.elements.warplan_cp_start_y:get(),   label = 'START'    },
-        confirm        = { x = gui.elements.warplan_cp_confirm_x:get(), y = gui.elements.warplan_cp_confirm_y:get(), label = 'Confirm'  },
-        next_objective = { x = gui.elements.warplan_cp_nextobj_x:get(), y = gui.elements.warplan_cp_nextobj_y:get(), label = 'Next Obj' },
     }
 
     -- Undercity entry click point (war-plan UC entry from Skov_Temis)

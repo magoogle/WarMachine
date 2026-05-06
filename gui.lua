@@ -23,6 +23,16 @@ local plugin_version = '0.4'
 console.print('Lua Plugin - WarMachine v' .. plugin_version .. ' by Magoogle (unified)')
 
 local mode = require 'core.mode'
+-- Nav GUI is rendered as a sub-tree inside our main_tree below.  Lazy
+-- in case nav isn't loaded for some reason -- gui.render() then renders
+-- without the Navigation section.
+local _nav_gui_lazy = nil
+local function nav_gui()
+    if _nav_gui_lazy ~= nil then return _nav_gui_lazy end
+    local ok, mod = pcall(require, 'core.nav.gui')
+    _nav_gui_lazy = (ok and mod) or false
+    return _nav_gui_lazy
+end
 
 local gui = {}
 
@@ -234,67 +244,16 @@ gui.elements = {
     warplan_whisper_accept_y_pct = si(0, 100, 85, 'warplan_whisper_accept_y_pct'),
     warplan_show_whisper_points  = cb(false, 'warplan_show_whisper_points'),
 
-    -- War Plan vendor menu click points
-    warplan_cp_tree     = tree_node:new(1),
-    warplan_show_points = cb(false, 'warplan_show_points'),
+    -- (Vendor-menu picker click points removed: tasks/warplan/test_select.lua
+    --  now drives the WAR PLANS menu via the host's `warplan` API
+    --  (warplan.is_ready / get_selectable_now / select_node / confirm).
+    --  No more 25 slot sliders or START/CONFIRM coords -- the API sends
+    --  the confirm packet directly.  warplan_show_points / warplan_cp_*
+    --  GUI elements are gone; their saved hashes will just be inert keys
+    --  in the user's settings store.)
 
-    -- 5 rows x 3 cols = 15 slot click-points covering the WAR PLANS menu.
-    -- The three slots in each row sit at the same Y in-game (row of cards
-    -- in the menu), so we only expose ONE Y slider per row -- 15 X +
-    -- 5 row-Y = 20 sliders instead of 30.  Cuts setup time roughly in
-    -- half.  Row Y defaults match the original per-slot defaults.
-    -- Row Y defaults from a calibrated 1080p layout (operator-supplied).
-    -- Stride is ~180px row-to-row; first row at y=360.  These land
-    -- correctly on the WAR PLANS vendor menu out of the box; users on
-    -- non-1080p resolutions still need to retune via "Show points".
-    warplan_cp_row1_y = si(0, 2160,  360, 'warplan_cp_row1_y'),
-    warplan_cp_row2_y = si(0, 2160,  547, 'warplan_cp_row2_y'),
-    warplan_cp_row3_y = si(0, 2160,  735, 'warplan_cp_row3_y'),
-    warplan_cp_row4_y = si(0, 2160,  914, 'warplan_cp_row4_y'),
-    warplan_cp_row5_y = si(0, 2160, 1094, 'warplan_cp_row5_y'),
-
-    -- Per-slot X (unchanged -- columns can drift independently)
-    -- Column X defaults from a calibrated 1080p layout (operator-
-    -- supplied).  Same five X values repeat across all 5 rows because
-    -- the vendor cards form a regular grid:
-    --   Col 1 = 167, Col 2 = 319, Col 3 = 471, Col 4 = 623, Col 5 = 775
-    -- Stride 152px between columns.  Hand-tuned -- Row 1 Col 2 sits
-    -- at 319 like everyone else in production; the screenshot showed
-    -- 318 mid-drag.
-    warplan_cp_s1_x  = si(0, 3840, 167, 'warplan_cp_s1_x'),
-    warplan_cp_s2_x  = si(0, 3840, 319, 'warplan_cp_s2_x'),
-    warplan_cp_s3_x  = si(0, 3840, 471, 'warplan_cp_s3_x'),
-    warplan_cp_s4_x  = si(0, 3840, 623, 'warplan_cp_s4_x'),
-    warplan_cp_s5_x  = si(0, 3840, 775, 'warplan_cp_s5_x'),
-    warplan_cp_s6_x  = si(0, 3840, 167, 'warplan_cp_s6_x'),
-    warplan_cp_s7_x  = si(0, 3840, 319, 'warplan_cp_s7_x'),
-    warplan_cp_s8_x  = si(0, 3840, 471, 'warplan_cp_s8_x'),
-    warplan_cp_s9_x  = si(0, 3840, 623, 'warplan_cp_s9_x'),
-    warplan_cp_s10_x = si(0, 3840, 775, 'warplan_cp_s10_x'),
-    warplan_cp_s11_x = si(0, 3840, 167, 'warplan_cp_s11_x'),
-    warplan_cp_s12_x = si(0, 3840, 319, 'warplan_cp_s12_x'),
-    warplan_cp_s13_x = si(0, 3840, 471, 'warplan_cp_s13_x'),
-    warplan_cp_s14_x = si(0, 3840, 623, 'warplan_cp_s14_x'),
-    warplan_cp_s15_x = si(0, 3840, 775, 'warplan_cp_s15_x'),
-    warplan_cp_s16_x = si(0, 3840, 167, 'warplan_cp_s16_x'),
-    warplan_cp_s17_x = si(0, 3840, 319, 'warplan_cp_s17_x'),
-    warplan_cp_s18_x = si(0, 3840, 471, 'warplan_cp_s18_x'),
-    warplan_cp_s19_x = si(0, 3840, 623, 'warplan_cp_s19_x'),
-    warplan_cp_s20_x = si(0, 3840, 775, 'warplan_cp_s20_x'),
-    warplan_cp_s21_x = si(0, 3840, 167, 'warplan_cp_s21_x'),
-    warplan_cp_s22_x = si(0, 3840, 319, 'warplan_cp_s22_x'),
-    warplan_cp_s23_x = si(0, 3840, 471, 'warplan_cp_s23_x'),
-    warplan_cp_s24_x = si(0, 3840, 623, 'warplan_cp_s24_x'),
-    warplan_cp_s25_x = si(0, 3840, 775, 'warplan_cp_s25_x'),
-
-    -- Top-row UI buttons
-    -- START button defaults from the same calibrated 1080p layout.
-    warplan_cp_start_x   = si(0, 3840,  668, 'warplan_cp_start_x'),
-    warplan_cp_start_y   = si(0, 2160, 1282, 'warplan_cp_start_y'),
-    warplan_cp_confirm_x = si(0, 3840, 0,    'warplan_cp_confirm_x'),
-    warplan_cp_confirm_y = si(0, 2160, 0,    'warplan_cp_confirm_y'),
-
-    -- Map "Next Warplan Objective" button
+    -- Map "Next Warplan Objective" button.  Still pixel-clicked because
+    -- the host doesn't expose the map's Next-Obj button via API.
     warplan_cp_nextobj_x  = si(0, 3840, 960, 'warplan_cp_nextobj_x'),
     warplan_cp_nextobj_y  = si(0, 2160, 960, 'warplan_cp_nextobj_y'),
 
@@ -367,11 +326,11 @@ gui.render = function ()
         'WarPlans_QST_* quest.  The other entries are standalone "just farm this ' ..
         'activity in a loop" modes.')
 
-    -- Per-mode hint text under the dropdown
+    -- Per-mode hint text under the dropdown.  IDLE is no longer in the
+    -- dropdown so we don't render an Idle hint -- if a stale settings
+    -- file still carries mode==IDLE, fall through to the generic hint.
     local current_mode_value = mode.from_index(gui.elements.mode_select:get())
-    if current_mode_value == mode.IDLE then
-        render_menu_header('Mode = Idle. Bot does nothing -- pick a mode above.')
-    elseif current_mode_value == mode.WARPLAN then
+    if current_mode_value == mode.WARPLAN then
         render_menu_header('Mode = War Plan. Bot accepts a War Plan, cycles through its activities, and turns in.')
     else
         render_menu_header(string.format(
@@ -441,56 +400,14 @@ gui.render = function ()
         gui.elements.warplan_auto_tree:pop()
     end
 
-    if gui.elements.warplan_cp_tree:push('Vendor menu click points') then
-        render_menu_header('Open the War Plans vendor window. Toggle "Show points" to see crosshairs, then drag sliders to align them with each activity slot, START, Confirm popup, and the map Next-Obj button.')
-        gui.elements.warplan_show_points:render('Show points', 'Render crosshairs at each click point')
-
-        render_menu_header('5x5 grid covering the WAR PLANS menu. Five slots in each row share a single Y slider -- in-game the cards in a row sit at the same screen height, so independent Y per slot was just busywork. Drag each row Y once, then nudge each column X (cols 1-5 left to right).')
-        local function row(prefix, color_label, ey, e1x, e2x, e3x, e4x, e5x)
-            ey :render(prefix .. ' Y',     'Screen Y for the entire ' .. prefix .. ' (' .. color_label .. ')')
-            e1x:render(prefix .. ' Col1 X', 'Screen X for ' .. prefix .. ' column 1 (leftmost)')
-            e2x:render(prefix .. ' Col2 X', 'Screen X for ' .. prefix .. ' column 2')
-            e3x:render(prefix .. ' Col3 X', 'Screen X for ' .. prefix .. ' column 3 (middle)')
-            e4x:render(prefix .. ' Col4 X', 'Screen X for ' .. prefix .. ' column 4')
-            e5x:render(prefix .. ' Col5 X', 'Screen X for ' .. prefix .. ' column 5 (rightmost)')
-        end
-        row('Row 1', 'red',
-            gui.elements.warplan_cp_row1_y,
-            gui.elements.warplan_cp_s1_x,  gui.elements.warplan_cp_s2_x,
-            gui.elements.warplan_cp_s3_x,  gui.elements.warplan_cp_s4_x,
-            gui.elements.warplan_cp_s5_x)
-        row('Row 2', 'green',
-            gui.elements.warplan_cp_row2_y,
-            gui.elements.warplan_cp_s6_x,  gui.elements.warplan_cp_s7_x,
-            gui.elements.warplan_cp_s8_x,  gui.elements.warplan_cp_s9_x,
-            gui.elements.warplan_cp_s10_x)
-        row('Row 3', 'yellow',
-            gui.elements.warplan_cp_row3_y,
-            gui.elements.warplan_cp_s11_x, gui.elements.warplan_cp_s12_x,
-            gui.elements.warplan_cp_s13_x, gui.elements.warplan_cp_s14_x,
-            gui.elements.warplan_cp_s15_x)
-        row('Row 4', 'cyan',
-            gui.elements.warplan_cp_row4_y,
-            gui.elements.warplan_cp_s16_x, gui.elements.warplan_cp_s17_x,
-            gui.elements.warplan_cp_s18_x, gui.elements.warplan_cp_s19_x,
-            gui.elements.warplan_cp_s20_x)
-        row('Row 5', 'orange',
-            gui.elements.warplan_cp_row5_y,
-            gui.elements.warplan_cp_s21_x, gui.elements.warplan_cp_s22_x,
-            gui.elements.warplan_cp_s23_x, gui.elements.warplan_cp_s24_x,
-            gui.elements.warplan_cp_s25_x)
-        gui.elements.warplan_cp_start_x:render('START X', 'Screen X for the START button')
-        gui.elements.warplan_cp_start_y:render('START Y', 'Screen Y for the START button')
-
-        render_menu_header('Confirmation popup -- appears after START asking to confirm the war plan. Leave at 0,0 if your war plan doesn\'t show this popup; the step will be skipped.')
-        gui.elements.warplan_cp_confirm_x:render('Confirm X', 'Screen X for the Confirm button on the post-START popup (silver crosshair)')
-        gui.elements.warplan_cp_confirm_y:render('Confirm Y', 'Screen Y for the Confirm button')
+    if gui.elements.warplan_cp_tree:push('Map / UI click points') then
+        render_menu_header('A few in-game UI elements still require pixel clicks because the host doesn\'t expose them via API. The vendor menu (slot picker / START / Confirm) was migrated to the warplan API and no longer needs coords.')
 
         render_menu_header('Map "Next Warplan Objective" button. Opens map (Tab) and clicks the next-objective marker for a one-step teleport between activities.')
         gui.elements.warplan_cp_nextobj_x:render('Next-Obj X', 'Screen X for the Next-Warplan-Objective button on the map')
         gui.elements.warplan_cp_nextobj_y:render('Next-Obj Y', 'Screen Y for the Next-Warplan-Objective button')
 
-        render_menu_header('Undercity Obelisk Open Portal button -- appears in the tribute UI after interacting with the Undercity Obelisk in Temis. Brown crosshair.')
+        render_menu_header('Undercity Obelisk Open Portal button -- appears in the tribute UI after interacting with the Undercity Obelisk in Temis.')
         gui.elements.undercity_auto_enter:render('Auto-enter Undercity',
             'When in Temis with an active Undercity war plan, walk to the Undercity Obelisk + click Open Portal automatically.')
         gui.elements.undercity_cp_open_portal_x:render('Open Portal X',
@@ -669,6 +586,15 @@ gui.render = function ()
                 'How many runs between automatic resets.')
         end
         gui.elements.boss_tree:pop()
+    end
+
+    -- Nav sub-tree (movement spells + reset + freeroam debug toggle).
+    -- Provided by core/nav/gui.lua so the navigation module owns its
+    -- own controls; rendered inside our main_tree as a sub-section so
+    -- it doesn't appear as a second top-level window.
+    local ng = nav_gui()
+    if ng and ng.render then
+        ng.render()
     end
 
     if gui.elements.debug_tree:push('Debug') then

@@ -33,8 +33,12 @@ mode.labels = {
 }
 
 -- Order shown in the GUI combo box.  WarPlan first because it's the
--- "everything in one" autopilot most users will pick.
-mode.dropdown_order = { 'IDLE', 'WARPLAN', 'NIGHTMARE', 'UNDERCITY', 'PIT', 'HORDES', 'HELLTIDE', 'BOSS' }
+-- "everything in one" autopilot most users will pick.  IDLE is
+-- intentionally NOT exposed in the dropdown -- disabling WarMachine via
+-- its main toggle is the only sane "do nothing" path; a separate IDLE
+-- run-mode is dead UX.  The IDLE constant stays defined so back-compat
+-- predicates (mode.is_idle, settings carrying mode==0) keep compiling.
+mode.dropdown_order = { 'WARPLAN', 'NIGHTMARE', 'UNDERCITY', 'PIT', 'HORDES', 'HELLTIDE', 'BOSS' }
 
 mode.dropdown_labels = (function ()
     local out = {}

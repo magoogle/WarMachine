@@ -109,29 +109,14 @@ local function main_pulse()
         debounce_time = get_time_since_inject()
         navigator.reset()
     end
-    if gui.elements.long_path_set_target:get_state() == 1 then
-        gui.elements.long_path_set_target:set(false)
-        long_path.set_target()
-        if long_path.pinned_target then
-            local p = long_path.pinned_target
-            gui.long_path_target_str = string.format("(%.1f, %.1f, %.1f)", p:x(), p:y(), p:z())
-        end
-    end
-    if gui.elements.long_path_set_target_cursor:get_state() == 1 then
-        gui.elements.long_path_set_target_cursor:set(false)
-        long_path.set_target_cursor()
-        if long_path.pinned_target then
-            local p = long_path.pinned_target
-            gui.long_path_target_str = string.format("(%.1f, %.1f, %.1f) [cursor]", p:x(), p:y(), p:z())
-        end
-    end
-    if gui.elements.long_path_test:get_state() == 1 then
-        gui.elements.long_path_test:set(false)
-        long_path.test_path()
-    end
-    -- Keep GUI state in sync
-    gui.long_path_navigating = long_path.navigating
-    -- Long path navigation: drive navigator independently of freeroam toggle
+    -- Long Path Debug GUI buttons (Set Target / Cursor / Test) were
+    -- removed -- the long_path module itself stays in use by activities
+    -- via move.to_pos auto-engaging it for goals > 60y.  Only the
+    -- ad-hoc pin-and-test debug widgets are gone.
+    --
+    -- long_path.navigating is still driven through external API calls
+    -- (BatmobilePlugin.navigate_long_path / WarMachineNav equivalents)
+    -- so the navigation pulse below still applies.
     if long_path.navigating then
         if not local_player or local_player:is_dead() then
             long_path.stop_navigation()
@@ -194,9 +179,9 @@ on_update(function()
     main_pulse()
 end)
 
-on_render_menu(function ()
-    gui.render()
-end)
+-- Nav GUI is rendered as a sub-tree of WarMachine's main menu (called
+-- from WarMachine/gui.lua), not as a top-level on_render_menu handler --
+-- otherwise it'd appear as a second separate window in the cheat menu.
 on_render(render_pulse)
 
 -- Public globals.

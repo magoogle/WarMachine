@@ -233,39 +233,12 @@ local function draw_crosshair(cx, cy, label, color)
 end
 
 local render_pulse = function ()
-    -- Click-point overlay renders regardless of bot enable state -- it's a
-    -- positioning aid that needs to be visible while the user is dragging
-    -- sliders, even before they flip Enable on.
-    if settings.warplan and settings.warplan.show_click_points then
-        local cps = settings.warplan.click_points
-        if cps then
-            for i, slot in ipairs(cps.slots or {}) do
-                draw_crosshair(slot.x, slot.y, slot.label, cp_colors[i] or color_white(220))
-            end
-            if cps.start then
-                draw_crosshair(cps.start.x, cps.start.y, cps.start.label, cp_colors.start)
-            end
-            if cps.confirm and (cps.confirm.x ~= 0 or cps.confirm.y ~= 0) then
-                draw_crosshair(cps.confirm.x, cps.confirm.y, cps.confirm.label, cp_colors.confirm)
-            end
-            if cps.next_objective then
-                draw_crosshair(cps.next_objective.x, cps.next_objective.y,
-                    cps.next_objective.label, cp_colors.next_objective)
-            end
-        end
-    end
-
-    -- Undercity click points overlay
-    if settings.warplan and settings.warplan.show_click_points
-       and settings.undercity and settings.undercity.click_points then
-        local op = settings.undercity.click_points.open_portal
-        if op and (op.x ~= 0 or op.y ~= 0) then
-            draw_crosshair(op.x, op.y, op.label, color_brown(220))
-        end
-    end
-
-    -- (NMD, Pit, and Helltide standalone modes were removed -- the
-    -- corresponding sub-plugins handle their own click points.)
+    -- Vendor-menu picker click-point overlay was removed when the WAR
+    -- PLANS menu migrated to the warplan API.  The remaining pixel-
+    -- click coords (Next-Obj on the map, Undercity Open Portal in the
+    -- tribute UI) are tuned via the slider values directly; if a future
+    -- need for visual crosshairs reappears, restore the draw_crosshair
+    -- block from before commit (see git history).
 
     -- Whispers click-point overlay (Reward card + Accept button).  Drawn
     -- as fractional screen positions so what you see is what the click
