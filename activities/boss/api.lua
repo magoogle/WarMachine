@@ -22,6 +22,7 @@
 -- ---------------------------------------------------------------------------
 
 local mount_manager = require 'core.mount_manager'
+local move          = require 'core.move'
 local settings_mod  = require 'activities.boss.settings'
 local tracker       = require 'activities.boss.tracker'
 local boss_data     = require 'activities.boss.data.boss_data'
@@ -87,6 +88,11 @@ M.pulse = function ()
     -- Helltide is the only activity exposing the mount option.
     mount_manager.update({ disabled = true, allow_mount = false })
     runner.pulse()
+    -- Drive nav's pathfind/replan/move loop.  walk_boss_room.lua issues
+    -- move.to_pos to walk into the room; without this heartbeat the
+    -- target is set but the nav update/move cycle never fires and the
+    -- player just stands at the altar.
+    move.tick()
 end
 
 M.get_status = function ()
