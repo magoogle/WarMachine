@@ -181,6 +181,8 @@ gui.elements = {
     boss_altar_stuck_secs          = si(15, 120,   60, 'boss_altar_stuck_secs'),
     boss_chest_grace_secs          = si(0,  60,   15, 'boss_chest_grace_secs'),
     boss_auto_reset_after          = si(60,1800,  600,'boss_auto_reset_after'),
+    boss_dungeon_reset_enabled     = cb(false, 'boss_dungeon_reset_enabled'),
+    boss_dungeon_reset_interval    = si(1, 200, 25, 'boss_dungeon_reset_interval'),
     -- Boss selection (standalone mode only -- WarPlan picks for us).
     boss_selection_mode            = co(0,        'boss_selection_mode'),  -- Specific / Random / Split
     boss_primary                   = co(0,        'boss_primary'),         -- index into boss list
@@ -660,6 +662,12 @@ gui.render = function ()
         gui.elements.boss_chest_grace_secs:render('Chest grace (s)',
             'Wait this long after the chest opens before declaring the run done (so VFX + loot windows finish)')
         gui.elements.boss_auto_reset_after:render('Auto-reset after (s)', 'Safety net: full reset_all_dungeons if a run drags this long')
+        gui.elements.boss_dungeon_reset_enabled:render('Periodic dungeon reset',
+            'Call reset_all_dungeons() between runs every N completed runs.  Helps when long sessions accumulate stale actors / lingering effects in boss zones.')
+        if gui.elements.boss_dungeon_reset_enabled:get() then
+            gui.elements.boss_dungeon_reset_interval:render('  Reset every N runs',
+                'How many runs between automatic resets.')
+        end
         gui.elements.boss_tree:pop()
     end
 

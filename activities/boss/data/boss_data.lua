@@ -109,7 +109,7 @@ M.boss_room_anchor = {
     ['Boss_WT4_Andariel']       = { x =   8.282, y =  -8.734, z = -6.223 },
     ['Boss_WT4_MegaDemon']      = { x =   4.924, y =   5.308, z =  0.127 },
     ['_Varshan']                = { x =  -3.280, y =  -3.194, z = -3.304 },
-    ['Boss_WT5_Harbinger']      = { x =   0.930, y =  16.180, z =  0.000 },
+    ['Boss_WT5_Harbinger']      = { x =   2.900, y =  15.000, z =  0.000 },
 }
 
 -- Reward-chest skin patterns.  Substring match -- chests can vary by

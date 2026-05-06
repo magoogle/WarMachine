@@ -26,6 +26,13 @@ local M = {
                               -- Universal end-of-run loot grace (was 4s);
                               -- see core/exit_grace.lua for the rationale.
 
+    -- Periodic dungeon-reset between runs.  Some boss zones accumulate
+    -- stale actors / lingering effects after many back-to-back runs;
+    -- calling reset_all_dungeons() every N completed runs clears that.
+    -- Off by default; opt-in via the GUI checkbox below.
+    dungeon_reset_enabled  = false,
+    dungeon_reset_interval = 25,
+
     -- Boss selection (standalone mode only -- WarPlan picks the boss for us).
     -- selection_mode:
     --   1 = Specific  (always run primary_boss)
@@ -63,6 +70,8 @@ M.update = function ()
     M.auto_reset_after = bget('boss_auto_reset_after', 600)
     M.altar_stuck_secs = bget('boss_altar_stuck_secs', 60)
     M.chest_grace_secs = bget('boss_chest_grace_secs', 15)
+    M.dungeon_reset_enabled  = bget('boss_dungeon_reset_enabled',  false)
+    M.dungeon_reset_interval = bget('boss_dungeon_reset_interval', 25)
     -- combo_box returns 0-indexed slots.  selection_mode:
     --   0 = Specific, 1 = Random, 2 = Split.  Add 1 so M.selection_mode
     --   matches the 1-based settings semantic above.
