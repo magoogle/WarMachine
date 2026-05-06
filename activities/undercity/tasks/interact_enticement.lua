@@ -311,7 +311,13 @@ task.Execute = function ()
         return
     end
 
-    -- Walk phase: too far, move toward the actor via core.move.
+    -- Walk phase: too far, move toward the actor via nav.
+    -- We use move.to_pos() rather than move.to_actor() because D4 ignores
+    -- interact_object() on actors that aren't yet interactable -- Spirit
+    -- Hearths and Beacons report is_interactable=false until the player is
+    -- close, so move.to_actor (= interact_object) is silently dropped and
+    -- the bot never moves.  move.to_pos drives nav to the actor's
+    -- world position, which works regardless of interactable state.
     if d > INTERACT_RANGE then
         -- Early-confirm-consumed check.  By CONFIRMED_RANGE_M (8y) the
         -- bot has been "approaching" long enough for D4 to flip
@@ -340,7 +346,7 @@ task.Execute = function ()
             return
         end
 
-        move.to_actor(actor)
+        move.to_pos({ x = p:x(), y = p:y(), z = p:z() }, INTERACT_RANGE)
         task.status = string.format('walking to %s (%.0fm)', sn, d)
         return
     end

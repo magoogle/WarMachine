@@ -19,6 +19,8 @@ M.label = 'Pit'
 
 M.is_loaded = function () return true end
 
+local _was_in_pit = false   -- tracks pit→hub transition for one-shot clear
+
 local function in_pit()
     local w = get_current_world()
     if not w or not w.get_name then return false end
@@ -50,7 +52,18 @@ M.pulse = function ()
     mount_manager.update({ disabled = true, allow_mount = false })
 
     runner.pulse()
-    move.tick()
+    -- nav only needed inside the pit.  In Skov_Temis, D4's native
+    -- click-to-walk handles NPC navigation.  Calling move.clear() every
+    -- pulse in the hub would cancel D4's walk one frame after interact_object
+    -- sets it (bm.clear_target cancels pending navigation), so we only clear
+    -- once on the pit→hub transition, then stay out of the way.
+    if in_pit() then
+        _was_in_pit = true
+        move.tick()
+    elseif _was_in_pit then
+        _was_in_pit = false
+        move.clear()
+    end
 end
 
 M.get_status = function ()

@@ -1,31 +1,31 @@
 -- ---------------------------------------------------------------------------
--- core/move.lua  --  Batmobile-driven movement primitive.
+-- core/move.lua  --  WarMachine nav-driven movement primitive.
 --
--- Activity tasks call into this instead of touching BatmobilePlugin / WarPath
+-- Activity tasks call into this instead of touching WarMachineNav / WarPath
 -- directly.  Two tiers in priority order:
 --
 --   1. Actor in stream  -> interact_object(actor)
 --      D4's native click-to-walk.  Works for any actor in actors_manager;
 --      D4 walks the player the last few yards on its own.
 --
---   2. Position-based  -> Batmobile (BatmobilePlugin.set_target)
---      Batmobile owns scene-aware pathfinding for dungeons/pits/undercity
+--   2. Position-based  -> WarMachine nav (WarMachineNav.set_target)
+--      WarMachine nav owns scene-aware pathfinding for dungeons/pits/undercity
 --      where WarPath's overworld nav data doesn't apply.  Each pulse the
---      activity's pulse() must call move.tick() to drive Batmobile's
+--      activity's pulse() must call move.tick() to drive WarMachine nav's
 --      update + move loop -- that's the heartbeat.
 --
 -- WarPath is intentionally NOT used here for path planning.  WarPath stays
 -- for catalog-lookup helpers (cross-zone routing, get_actors), but the
--- actual walking is Batmobile's job in every zone type.
+-- actual walking is WarMachine nav's job in every zone type.
 --
 -- Public API:
 --
 --   move.to_actor(actor)                -- tier 1: click-to-walk
---   move.to_pos(goal, opts)             -- tier 2: Batmobile pathfind
+--   move.to_pos(goal, opts)             -- tier 2: WarMachine nav pathfind
 --   move.to_actor_or_pos(actor, pos, opts)
---   move.tick(force?)                   -- per-pulse heartbeat for Batmobile
+--   move.tick(force?)                   -- per-pulse heartbeat for WarMachine nav
 --   move.clear()                        -- stop, drop target
---   move.is_done()                      -- true when Batmobile reached goal
+--   move.is_done()                      -- true when WarMachine nav reached goal
 --
 -- Cross-zone helpers (catalog data; delegates to WarPathPlugin):
 --   move.plan_to_zone(target_zone)
@@ -38,11 +38,11 @@ local M = {}
 
 local CALLER = 'warmachine'
 
--- Throttle Batmobile's update+move to 10fps.  Batmobile has its own 50ms
+-- Throttle WarMachine nav's update+move to 10fps.  WarMachine nav has its own 50ms
 -- internal pacing; ticking at 60fps just runs it every call and burns
--- CPU.  Mirrors HelltideRevamped's bm_pulse cadence.  Pass force=true
+-- CPU.  Mirrors HelltideRevamped's nav_pulse cadence.  Pass force=true
 -- right after set_target so the new path starts immediately.
-local BM_TICK_INTERVAL = 0.1
+local NAV_TICK_INTERVAL = 0.1
 local _last_tick_t     = -math.huge
 
 -- Track the active target so move.to_pos calls with the same destination
@@ -50,12 +50,12 @@ local _last_tick_t     = -math.huge
 local _active_target = nil
 
 -- Long-path threshold: targets farther than this default to
--- BatmobilePlugin.navigate_long_path which uses uncapped (300ms-capped)
+-- WarMachineNav.navigate_long_path which uses uncapped (300ms-capped)
 -- A* and is the only reliable way to route across rooms in pits/undercity.
 local LONG_PATH_THRESHOLD_M = 60.0
 
-local function batmobile()
-    return rawget(_G, 'BatmobilePlugin')
+local function nav()
+    return rawget(_G, 'WarMachineNav')
 end
 
 local function warpath()
@@ -91,7 +91,7 @@ M.to_actor = function (actor)
 end
 
 -- ---------------------------------------------------------------------------
--- Tier 2: position-based movement via Batmobile.
+-- Tier 2: position-based movement via WarMachine nav.
 --
 -- opts.arrive_radius  -- meters; default 3
 -- opts.long_path      -- bool: force navigate_long_path (uncapped A*).
@@ -100,9 +100,9 @@ end
 local DEFAULT_ARRIVE = 3.0
 
 M.is_zone_supported = function ()
-    -- Batmobile pathfinds wherever the host pathfinder works -- effectively
+    -- WarMachine nav pathfinds wherever the host pathfinder works -- effectively
     -- "everywhere."  Kept as a stub for callers that still ask.
-    return batmobile() ~= nil
+    return nav() ~= nil
 end
 
 M.to_pos = function (goal, opts)
@@ -128,8 +128,8 @@ M.to_pos = function (goal, opts)
         return 'arrived'
     end
 
-    local bm = batmobile()
-    if not bm or not bm.set_target then return 'no_path' end
+    local n = nav()
+    if not n or not n.set_target then return 'no_path' end
 
     -- Same destination as last call: do nothing here.  The activity
     -- pulse's move.tick() at end-of-pulse drives the throttled heartbeat
@@ -141,13 +141,13 @@ M.to_pos = function (goal, opts)
 
     local accepted
     if opts.long_path or d > LONG_PATH_THRESHOLD_M then
-        if bm.navigate_long_path then
-            accepted = bm.navigate_long_path(CALLER, goal)
+        if n.navigate_long_path then
+            accepted = n.navigate_long_path(CALLER, goal)
         else
-            accepted = bm.set_target(CALLER, goal, false)
+            accepted = n.set_target(CALLER, goal, false)
         end
     else
-        accepted = bm.set_target(CALLER, goal, false)
+        accepted = n.set_target(CALLER, goal, false)
     end
 
     if accepted == false then return 'no_path' end
@@ -169,20 +169,20 @@ end
 -- ---------------------------------------------------------------------------
 -- Free-roam exploration.  Tasks call this when they have no specific
 -- target but still want the player to move (helltide/return_to_zone,
--- core/explorer, pit floor seek).  Batmobile's own explorer picks the
+-- core/explorer, pit floor seek).  WarMachine nav's own explorer picks the
 -- next frontier cell and drives the player toward it; we just resume it.
 --
--- opts.priority -- forwarded to BatmobilePlugin.set_priority (string from
+-- opts.priority -- forwarded to WarMachineNav.set_priority (string from
 --                  the consuming plugin, governs frontier scoring).
 -- ---------------------------------------------------------------------------
 M.explore = function (opts)
-    local bm = batmobile()
-    if not bm then return false end
+    local n = nav()
+    if not n then return false end
     _active_target = nil
-    if opts and opts.priority and bm.set_priority then
-        pcall(bm.set_priority, CALLER, opts.priority)
+    if opts and opts.priority and n.set_priority then
+        pcall(n.set_priority, CALLER, opts.priority)
     end
-    if bm.resume then pcall(bm.resume, CALLER) end
+    if n.resume then pcall(n.resume, CALLER) end
     -- Don't force a tick here.  The activity's move.tick() heartbeat at
     -- end of pulse handles the throttled drive.  Forcing would bypass
     -- the 10fps throttle and run update+move at the host pulse rate.
@@ -191,7 +191,7 @@ end
 
 -- ---------------------------------------------------------------------------
 -- Per-pulse heartbeat.  Each activity api.lua pulse() must call this so
--- Batmobile's pathfind/replan/move cycle ticks even when no task issued a
+-- WarMachine nav's pathfind/replan/move cycle ticks even when no task issued a
 -- set_target this pulse.
 --
 -- force=true bypasses the 10fps throttle.  to_pos uses force=true on the
@@ -199,13 +199,13 @@ end
 -- immediately rather than waiting up to 100ms.
 -- ---------------------------------------------------------------------------
 M.tick = function (force)
-    local bm = batmobile()
-    if not bm then return end
+    local n = nav()
+    if not n then return end
     local now = get_time_since_inject() or 0
-    if not force and (now - _last_tick_t) < BM_TICK_INTERVAL then return end
+    if not force and (now - _last_tick_t) < NAV_TICK_INTERVAL then return end
     _last_tick_t = now
-    if bm.update then pcall(bm.update, CALLER) end
-    if bm.move   then pcall(bm.move,   CALLER) end
+    if n.update then pcall(n.update, CALLER) end
+    if n.move   then pcall(n.move,   CALLER) end
 end
 
 -- ---------------------------------------------------------------------------
@@ -213,47 +213,47 @@ end
 -- ---------------------------------------------------------------------------
 M.clear = function (_caller)
     _active_target = nil
-    local bm = batmobile()
-    if bm then
-        if bm.is_long_path_navigating and bm.is_long_path_navigating() and bm.stop_long_path then
-            pcall(bm.stop_long_path, CALLER)
+    local n = nav()
+    if n then
+        if n.is_long_path_navigating and n.is_long_path_navigating() and n.stop_long_path then
+            pcall(n.stop_long_path, CALLER)
         end
-        if bm.clear_target then pcall(bm.clear_target, CALLER) end
+        if n.clear_target then pcall(n.clear_target, CALLER) end
     end
 end
 
 M.is_done = function ()
-    local bm = batmobile()
-    if not bm or not bm.is_done then return true end
-    return bm.is_done()
+    local n = nav()
+    if not n or not n.is_done then return true end
+    return n.is_done()
 end
 
 -- ---------------------------------------------------------------------------
--- Pause Batmobile entirely.  Use during interactions (chest open, NPC click,
+-- Pause WarMachine nav entirely.  Use during interactions (chest open, NPC click,
 -- portal step) where the bot must stand still so D4 can register the
--- click and play the animation.  Without pausing, Batmobile's update+move
+-- click and play the animation.  Without pausing, WarMachine nav's update+move
 -- heartbeat keeps walking the player away mid-interact.
 -- ---------------------------------------------------------------------------
 M.pause = function ()
-    local bm = batmobile()
-    if bm and bm.pause then pcall(bm.pause, CALLER) end
+    local n = nav()
+    if n and n.pause then pcall(n.pause, CALLER) end
 end
 
 M.resume = function ()
-    local bm = batmobile()
-    if bm and bm.resume then pcall(bm.resume, CALLER) end
+    local n = nav()
+    if n and n.resume then pcall(n.resume, CALLER) end
 end
 
 M.is_paused = function ()
-    local bm = batmobile()
-    if not bm or not bm.is_paused then return false end
-    return bm.is_paused()
+    local n = nav()
+    if not n or not n.is_paused then return false end
+    return n.is_paused()
 end
 
 -- ---------------------------------------------------------------------------
 -- Cross-zone helpers (catalog reads via WarPathPlugin -- still useful for
 -- "which zone do I teleport to next" lookups even though movement is
--- Batmobile's job).
+-- WarMachine nav's job).
 -- ---------------------------------------------------------------------------
 
 M.plan_to_zone = function (target_zone)

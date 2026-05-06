@@ -52,11 +52,17 @@ end
 
 M.shouldExecute = function ()
     if has_helltide_buff() then return true end
-    -- WarPlan helltide objective is active -- engage even without the
-    -- buff so we can navigate into the ring.
+    -- WarPlan helltide objective is active -- engage when NOT in a hub town
+    -- so return_to_zone can walk us into the ring after the TP.  In
+    -- Temis/Kurast, dispatch owns transit (fires next_obj); engaging here
+    -- would make move.tick() wander the hub while the teleport is pending.
     if core_mode.is_warplan() then
         local wp = quest_state.read()
-        if wp and wp.active then return true end
+        if wp and wp.active then
+            local w = get_current_world()
+            local z = w and w.get_current_zone_name and w:get_current_zone_name() or nil
+            if z ~= 'Skov_Temis' and z ~= 'Naha_Kurast' then return true end
+        end
     end
     -- Standalone HELLTIDE mode during the active hour -- run forever
     -- until time's up, opening as many chests as possible.
@@ -112,7 +118,7 @@ M.activate = function ()
 end
 
 M.deactivate = function ()
-    -- Clear any in-flight Batmobile target so we don't keep walking into
+    -- Clear any in-flight nav target so we don't keep walking into
     -- a wall after WarMachine moves to a different activity.
     move.clear()
     tracker.farm_target = nil

@@ -10,7 +10,7 @@
 -- buff drops we yield so return_to_zone (higher priority) can route us
 -- back into the ring via the WarPath catalog.
 --
--- Movement is delegated to Batmobile via move.explore -- Batmobile owns
+-- Movement is delegated to nav via move.explore -- nav owns
 -- the frontier-scoring + traversal-gizmo logic for every zone type.
 -- ---------------------------------------------------------------------------
 

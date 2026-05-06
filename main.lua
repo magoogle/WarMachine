@@ -27,6 +27,13 @@ local labels           = require 'core.labels'
 local find             = require 'core.find'
 local rotation_bridge  = require 'core.rotation_bridge'
 
+-- Primary navigation sub-module.  Loads on require: registers its own
+-- on_update / on_render / on_render_menu handlers and publishes the
+-- WarMachineNav global (plus a `BatmobilePlugin` back-compat alias so
+-- external consumers like Alfred and Reaper keep working until they
+-- migrate to the new name).
+require 'core.nav'
+
 local local_player, player_position
 local debounce_time    = nil
 local debounce_timeout = 0

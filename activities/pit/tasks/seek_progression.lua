@@ -2,17 +2,18 @@
 -- activities/pit/tasks/seek_progression.lua
 --
 -- Pick the next progression POI from the WarPath catalog (pit_floor_portal /
--- pit_exit / dungeon_entrance) and walk toward it via Batmobile.  When no
+-- pit_exit / dungeon_entrance) and walk toward it via nav.  When no
 -- catalog candidate is reachable, yield -- runner.lua's freeroam fallback
--- (core/explorer.lua -> move.explore) drives Batmobile's own exploration
+-- (core/explorer.lua -> move.explore) drives nav's own exploration
 -- until a portal comes into stream and interact_poi / floor_portal grabs it.
 -- ---------------------------------------------------------------------------
 
-local move    = require 'core.move'
-local zone    = require 'core.zone'
-local find    = require 'core.find'
-local reach   = require 'core.reach'
-local tracker = require 'activities.pit.tracker'
+local move     = require 'core.move'
+local zone     = require 'core.zone'
+local find     = require 'core.find'
+local reach    = require 'core.reach'
+local tracker  = require 'activities.pit.tracker'
+local settings = require 'activities.pit.settings'
 
 local task = { name = 'seek_progression', status = 'idle' }
 
@@ -150,6 +151,13 @@ end
 task.shouldExecute = function ()
     if not zone.in_pit() then return false end
     if find.any_enemy_in_range(25) then return false end   -- yield to combat
+    -- Don't route to the exit while the glyph upgrade is still pending.
+    -- Let upgrade_glyph / freeroam explore find the gizmo first.
+    if tracker.boss_killed_at and not tracker.glyph_done
+       and settings.interact_glyph ~= false
+    then
+        return false
+    end
 
     local lp = get_local_player()
     if not lp then return false end

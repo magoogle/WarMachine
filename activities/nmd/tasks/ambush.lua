@@ -182,6 +182,12 @@ task.shouldExecute = function ()
     -- (kill_monster has higher priority and will preempt for mobs).
     if not tracker.ambush_complete then
         if find.any_enemy_in_range(settings.kill_range or 25) then return false end
+        -- Only assert anchor-hold for events that have a real survive/wave
+        -- phase (objective text contains "survive").  DSQ_* investigation
+        -- quests (e.g. ForgottenRemains: examine corpses) have no waves;
+        -- yielding here lets interact_poi/kill_monster drive them naturally.
+        local q = quest_state.read_event()
+        if not q or not q.in_survive_phase then return false end
         return tracker.ambush_anchor ~= nil
     end
     return false
@@ -280,12 +286,15 @@ task.Execute = function ()
     if not a then return end
     local dx, dy = pp:x() - a.x, pp:y() - a.y
     local d = math.sqrt(dx*dx + dy*dy)
+    -- Always assert the anchor as the move target.  move.to_pos returns
+    -- 'arrived' and calls move.clear() when d <= arrive_radius, stopping
+    -- any residual nav path left over from a previous task.
+    move.to_pos({ x = a.x, y = a.y, z = pp:z() }, { arrive_radius = ANCHOR_HOLD_R })
     if d <= ANCHOR_HOLD_R then
         task.status = 'holding ambush anchor'
-        return
+    else
+        task.status = string.format('returning to anchor (%.1fm)', d)
     end
-    move.to_pos({ x = a.x, y = a.y, z = pp:z() }, { arrive_radius = ANCHOR_HOLD_R })
-    task.status = string.format('returning to anchor (%.1fm)', d)
 end
 
 return task

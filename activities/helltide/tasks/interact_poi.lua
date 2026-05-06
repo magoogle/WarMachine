@@ -4,9 +4,9 @@
 -- Walk to + click the highest-priority POI in the queue: chests,
 -- ores, herbs, shrines, pyres, world-event triggers.
 --
--- Movement is delegated to core.move (Batmobile).  At interact range we
--- pause Batmobile so the bot stands still long enough for D4 to register
--- the click and play the open animation -- without pausing, Batmobile's
+-- Movement is delegated to core.move (nav).  At interact range we
+-- pause nav so the bot stands still long enough for D4 to register
+-- the click and play the open animation -- without pausing, nav's
 -- heartbeat keeps walking the player away mid-interact and the chest
 -- never opens.
 --
@@ -14,7 +14,7 @@
 -- is_interactable() == false (chest opened) or disappears from the
 -- stream.  Marking visited on the FIRST interact_object call removed
 -- the POI from the queue immediately, the picker handed back the next
--- target, and Batmobile started walking away before D4 finished the
+-- target, and nav started walking away before D4 finished the
 -- click.
 -- ---------------------------------------------------------------------------
 
@@ -24,6 +24,18 @@ local live_actor  = require 'core.live_actor'
 local tracker     = require 'activities.helltide.tracker'
 local settings    = require 'activities.helltide.settings'
 local poi_priority = require 'activities.helltide.poi_priority'
+
+local HELLTIDE_BUFF_HASH = 1066539
+
+local function is_in_helltide()
+    local lp = get_local_player()
+    if not lp or not lp.get_buffs then return false end
+    for _, b in ipairs(lp:get_buffs() or {}) do
+        local hash = b.name_hash or (b.get_name_hash and b:get_name_hash())
+        if hash == HELLTIDE_BUFF_HASH then return true end
+    end
+    return false
+end
 
 local task = { name = 'interact_poi', status = 'idle' }
 
@@ -105,6 +117,13 @@ task.Execute = function ()
     -- Walking phase: deliver the player within INTERACT_RADIUS of the POI.
     if d > INTERACT_RADIUS then
         if _engaged_key == key then reset_engagement() end
+        -- Buff dropped while walking: POI is outside the current ring.
+        -- Mark it visited so the picker doesn't keep sending us there.
+        if not is_in_helltide() then
+            tracker.mark_visited(target)
+            task.status = target.kind .. ' outside ring -- skipped'
+            return
+        end
         local actor = find_helltide_actor(target)
         if actor then
             move.to_actor(actor)
@@ -130,7 +149,7 @@ task.Execute = function ()
         return
     end
 
-    -- Begin engagement: pause Batmobile so the bot stands still through
+    -- Begin engagement: pause nav so the bot stands still through
     -- the open animation.  Stamp the engagement timer so we can give up
     -- if the chest never opens (anti-stuck).
     if _engaged_key ~= key then

@@ -36,7 +36,7 @@ M.pulse = function ()
     -- boss entrance after objectives complete.
     tracker.scan_healing_wells()
     runner.pulse()
-    -- Drive Batmobile's pathfind/replan/move loop.  move.to_pos already
+    -- Drive nav's pathfind/replan/move loop.  move.to_pos already
     -- ticks force=true on its own pulse; this catches the no-new-target
     -- case so an active path keeps stepping.
     move.tick()

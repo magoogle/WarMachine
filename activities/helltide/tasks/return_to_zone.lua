@@ -4,7 +4,7 @@
 -- Walk the player into the helltide ring.  All navigation is delegated to
 -- WarPath: we query its static catalog for the nearest helltide-related
 -- POI in the current zone and feed the position into move.to_pos.  WarPath
--- owns pathfinding (with BatmobilePlugin.find_long_path fallback inside)
+-- owns pathfinding (with WarMachineNav.find_long_path fallback inside)
 -- and the catalog supplies the destination -- WarMachine just makes the
 -- two calls and hands the result over.
 -- ---------------------------------------------------------------------------
@@ -33,11 +33,6 @@ local function is_in_helltide()
         if hash == 1066539 then return true end
     end
     return false
-end
-
-local function helltide_active_hour()
-    local minute = tonumber(os.date('%M')) or 0
-    return minute < 55
 end
 
 local function warpath()
@@ -69,14 +64,21 @@ end
 
 task.shouldExecute = function ()
     if is_in_helltide() then return false end
-    if not helltide_active_hour() then return false end
-    return closest_helltide_poi() ~= nil
+    -- Engage whenever the buff is gone: either we walked out of the ring or
+    -- the helltide ended.  Don't gate on helltide_active_hour here -- if the
+    -- hour just ended and we're outside the ring, we still need to stop
+    -- nav from wandering further away.  Execute handles the no-POI
+    -- case by calling move.clear().
+    return true
 end
 
 task.Execute = function ()
     local poi = closest_helltide_poi()
     if not poi then
-        task.status = 'no helltide POI in WarPath catalog'
+        -- No helltide POI in the WarPath catalog for this zone.  Stop
+        -- nav so it doesn't keep wandering away from the ring.
+        move.clear()
+        task.status = 'no helltide POI -- stopped'
         return
     end
     local lp = get_local_player()

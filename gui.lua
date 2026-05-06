@@ -27,20 +27,20 @@ local mode = require 'core.mode'
 local gui = {}
 
 -- ---------------------------------------------------------------------------
--- External dependencies that stay separate from WarMachine.  These are
--- generic libraries the bot uses but doesn't own:
---   * Batmobile     -- pathfinding + exploration; required for all movement.
---                     Scene-aware A* that handles dungeons/pits/undercity
---                     where WarPath's overworld nav doesn't reach.
+-- External dependencies that stay separate from WarMachine.  Pathfinding
+-- and exploration are now built in (core/nav/), so there are no hard
+-- required externals.  These are optional:
 --   * WarPath       -- catalog reads only (POI lookup, vendor positions,
 --                     overworld helltide data).  Optional -- absent
 --                     installations fall back to live actor stream.
 --   * AlfredTheButler -- inventory/town management (optional)
 --   * Looteer         -- loot pickup (optional)
 -- ---------------------------------------------------------------------------
-local REQUIRED_PLUGINS = {
-    { folder = 'Batmobile',        global = 'BatmobilePlugin' },
-}
+-- Navigation is now built into WarMachine (core/nav/), so there are no
+-- hard required external plugins.  Kept as an empty list so the existing
+-- dependency-render loop still iterates safely; add entries here later
+-- if WarMachine grows new hard dependencies.
+local REQUIRED_PLUGINS = {}
 local OPTIONAL_PLUGINS = {
     { folder = 'WarPath',          global = 'WarPathPlugin',
       alt_folder = 'StaticPather', alt_global = 'StaticPatherPlugin' },
@@ -317,8 +317,9 @@ gui.elements = {
 gui.render = function ()
     if not gui.elements.main_tree:push('WarMachine v' .. plugin_version .. ' by Magoogle') then return end
 
-    -- Dependency check banner: block of red-text headers naming each
-    -- missing required plugin (currently only Batmobile).
+    -- Dependency check banner: REQUIRED_PLUGINS is empty now that nav is
+    -- built in.  The block is preserved so adding a future hard dependency
+    -- is a one-line entry-list edit.
     local missing = get_missing_dependencies()
     if #missing > 0 then
         render_menu_header('==========================================================')
@@ -326,7 +327,7 @@ gui.render = function ()
         for _, folder in ipairs(missing) do
             render_menu_header('    * ' .. folder)
         end
-        render_menu_header('  Install Batmobile in scripts/ then re-enable WarMachine.')
+        render_menu_header('  Install the listed plugin(s) and re-enable WarMachine.')
         render_menu_header('==========================================================')
     end
     -- Soft warnings for optional integrations.  WarPath / StaticPather

@@ -13,6 +13,8 @@ M.label = 'Undercity'
 
 M.is_loaded = function () return true end
 
+local _was_in_undercity = false   -- tracks undercity→hub transition for one-shot clear
+
 local function in_undercity()
     local w = get_current_world()
     if not w or not w.get_current_zone_name then return false end
@@ -37,7 +39,15 @@ M.pulse = function ()
     -- churn hurts.  Only Helltide uses auto-mount.
     mount_manager.update({ disabled = true, allow_mount = false })
     runner.pulse()
-    move.tick()
+    -- Same pattern as pit/api.lua: nav only in undercity, one-shot
+    -- clear on undercity→hub transition, then yield to D4 native walk.
+    if in_undercity() then
+        _was_in_undercity = true
+        move.tick()
+    elseif _was_in_undercity then
+        _was_in_undercity = false
+        move.clear()
+    end
 end
 
 M.get_status = function ()
