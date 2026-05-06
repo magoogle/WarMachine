@@ -294,7 +294,35 @@ end
 -- Range cap is the host's (~150 units; reliable to ~120).  Used as a
 -- fast-path: try the engine first for short hops, fall through to the
 -- BFS A* below on out-of-range / no-path / API-missing.
-local ENGINE_PATH_MAX_DIST = 100  -- below the host's 100-120 reliability band
+--
+-- The engine returns waypoints at 0.5u grid resolution -- 50+ points
+-- on a typical 25u hop.  Feeding that raw to the navigator produces
+-- visible stutter (it ticks through micro-waypoints every pulse,
+-- causing the "step-pause-step" pattern).  We sparsify with a
+-- distance-only filter (min 2u spacing) before returning -- preserves
+-- the engine's route geometry exactly (no LOS-based rerouting that
+-- could shortcut over a cliff), just drops intermediate points the
+-- navigator doesn't need to follow individually.
+local ENGINE_PATH_MAX_DIST    = 100  -- below the host's 100-120 reliability band
+local ENGINE_PATH_MIN_SPACING = 2.0  -- min yards between kept waypoints
+
+local function sparsify_engine_path(path)
+    if #path <= 2 then return path end
+    local out  = { path[1] }
+    local last = path[1]
+    local thr2 = ENGINE_PATH_MIN_SPACING * ENGINE_PATH_MIN_SPACING
+    for i = 2, #path - 1 do
+        local p  = path[i]
+        local dx = p:x() - last:x()
+        local dy = p:y() - last:y()
+        if (dx * dx + dy * dy) >= thr2 then
+            out[#out + 1] = p
+            last = p
+        end
+    end
+    out[#out + 1] = path[#path]   -- always keep the final waypoint
+    return out
+end
 
 local function try_engine_path(start, goal, dist)
     if dist > ENGINE_PATH_MAX_DIST then return nil end
@@ -302,7 +330,7 @@ local function try_engine_path(start, goal, dist)
     if not w or not w.calculate_path then return nil end
     local ok, result = pcall(function () return w:calculate_path(start, goal) end)
     if not ok or type(result) ~= 'table' or #result == 0 then return nil end
-    return result
+    return sparsify_engine_path(result)
 end
 
 pathfinder.find_path = function (start, goal, is_custom_target, shared_evaluated, time_cap_override)
@@ -315,16 +343,16 @@ pathfinder.find_path = function (start, goal, is_custom_target, shared_evaluated
     -- ---- Engine micro-path fast-path -------------------------------------
     -- For short hops, try the host's nav-mesh A* before falling back to
     -- the in-script BFS.  Engine paths are always complete (never
-    -- partial) and respect actual wall geometry, so the returned vec3[]
-    -- can drop straight into navigator.path.
+    -- partial) and respect actual wall geometry, so the (sparsified)
+    -- vec3[] can drop straight into navigator.path.
     do
         local d = utils.distance(start_node, goal_node)
         local engine_path = try_engine_path(start, goal, d)
         if engine_path then
             tracker.bench_count("pf_engine_hit")
             tracker.bench_stop("find_path",
-                string.format("engine plen=%d dist=%.0f custom=%s",
-                    #engine_path, d, tostring(is_custom_target)))
+                string.format("engine plen=%d dist=%.0f spacing=%.1f custom=%s",
+                    #engine_path, d, ENGINE_PATH_MIN_SPACING, tostring(is_custom_target)))
             return engine_path, false
         end
     end
