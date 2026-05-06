@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- WarMachine v0.2 by Magoogle -- War Plan orchestrator.
+-- WarMachine v0.4 by Magoogle -- War Plan orchestrator.
 --
 -- Single entry point that drives the War Plan cycle: opens the WAR PLANS
 -- vendor menu, selects activities, teleports between them via the map's

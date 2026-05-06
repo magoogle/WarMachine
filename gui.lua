@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- WarMachine v0.3 by Magoogle -- unified bot.
+-- WarMachine v0.4 by Magoogle -- unified bot.
 --
 -- Run modes (selected via the dropdown at the top of the panel):
 --   * War Plan  -- autopilot following the WarPlans_QST_* quest line
@@ -19,7 +19,7 @@
 -- ---------------------------------------------------------------------------
 
 local plugin_label   = 'warmachine'
-local plugin_version = '0.3'
+local plugin_version = '0.4'
 console.print('Lua Plugin - WarMachine v' .. plugin_version .. ' by Magoogle (unified)')
 
 local mode = require 'core.mode'
