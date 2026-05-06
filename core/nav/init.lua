@@ -25,6 +25,7 @@ local navigator    = require 'core.nav.navigator'
 local long_path    = require 'core.nav.long_path'
 local explorer     = require 'core.nav.explorer'
 local pathfinder   = require 'core.nav.pathfinder'
+local persistence  = require 'core.nav.persistence'
 
 -- Explorer memory: lives in process memory only -- no disk I/O.
 -- Cell knowledge accumulates while the player stays in one zone (and one
@@ -161,13 +162,24 @@ local function main_pulse()
         if local_player:is_dead() then
             revive_at_checkpoint()
         end
-        navigator.unpause()
-        local start_update = os.clock()
-        navigator.update()
-        tracker.timer_update = os.clock() - start_update
-        local start_move = os.clock()
-        navigator.move()
-        tracker.timer_move = os.clock() - start_move
+        -- Town/hub gate: skip explorer accumulation in non-trackable
+        -- zones (Skov_Temis, Cerrigar, Kyovashad, Margrave, etc.).
+        -- Towns are tiny + transit-only; tracking cells there bloats
+        -- the in-memory tables and runs the navigator's frontier
+        -- selector for no useful exploration.  Player can still walk
+        -- around freely via the host's normal movement; we just skip
+        -- the navigator's update/move heartbeat.  See SKIP_PREFIXES
+        -- in core/nav/persistence.lua for the full skip list.
+        local cur_zone = current_zone_name()
+        if persistence.is_persistable_zone(cur_zone) then
+            navigator.unpause()
+            local start_update = os.clock()
+            navigator.update()
+            tracker.timer_update = os.clock() - start_update
+            local start_move = os.clock()
+            navigator.move()
+            tracker.timer_move = os.clock() - start_move
+        end
     end
 end
 

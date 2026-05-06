@@ -9,9 +9,13 @@
 -- explores from scratch, but the trade is a stutter-free run loop.
 --
 -- What still lives here:
---   * classify_zone / is_persistable_zone -- the SKIP_PREFIXES list is
---     still used by callers to decide whether to track a zone at all
---     (cities/hubs are tiny and not worth in-memory bookkeeping).
+--   * classify_zone / is_persistable_zone -- gates freeroam-mode
+--     exploration in core/nav/init.lua so the explorer doesn't
+--     accumulate cell state for city/hub zones (Skov_Temis, Cerrigar,
+--     Kyovashad, etc.).  Activity-driven nav (move.tick from pit /
+--     undercity / boss api.lua) is already town-gated by per-activity
+--     in_zone checks; this classifier covers the remaining freeroam
+--     path.  Add new hub-zone prefixes to SKIP_PREFIXES below.
 --   * load / save / flush_if_due / reset_mirror / get_mirror_stats   --
 --     preserved as no-ops so existing call sites compile unchanged.
 --     load returns nil; save / flush_if_due return false; reset_mirror
