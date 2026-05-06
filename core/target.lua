@@ -142,6 +142,31 @@ local function is_actor_walkable_destination(a)
     return ok and walkable == true
 end
 
+-- ---- Vertical-distance reject ----
+-- Mobs across a cliff / on a lower floor / in the void below a
+-- balcony report on-navmesh positions and sometimes pass the
+-- pathfinder reachability check via a long roundabout route the
+-- host found.  Result: bot picks a target that is technically
+-- reachable but practically unreachable from the player's current
+-- position, walks to the cliff edge, and gets stuck pathing-toward.
+--
+-- Cheap pre-filter before the heavier reach check: reject any
+-- target whose Z is more than MAX_Z_DELTA away from the player.
+-- 5 yards is roughly the smallest cliff drop in D4 zones (typical
+-- floor-to-floor is 8-10y; stairs/ramps stay under 3y).  Targets
+-- across a real elevation break get filtered; same-floor targets
+-- with normal slope variance pass through.
+local MAX_Z_DELTA = 5.0
+
+local function z_distance_ok(pp, a)
+    if not utility or not utility.is_point_walkeable then return true end
+    local ap = a.get_position and a:get_position() or nil
+    if not ap or not pp then return true end
+    local pz = pp:z() or 0
+    local az = ap:z() or 0
+    return math.abs(az - pz) <= MAX_Z_DELTA
+end
+
 -- ---- Path-based reachability check ----
 --
 -- is_point_walkeable says "this cell is on the navmesh"; it does NOT
@@ -208,6 +233,7 @@ M.pick = function (opts)
                     local key = actor_key(e)
                     local skip = is_unreachable(key, now)
                                  or not is_actor_walkable_destination(e)
+                                 or not z_distance_ok(pp, e)
                     if not skip then
                         local bucket
                         -- QUEST-HINT OVERRIDE: actor's skin matches
