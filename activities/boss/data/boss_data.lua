@@ -97,20 +97,11 @@ M.zone_prefixes = {
     '_Varshan',
 }
 
--- Boss-room anchor positions for kill_monster's "stay in arena" tether.
--- Same data as Reaper enums.positions.boss_room.  Used when no enemy is
--- in range so we drift back toward the boss's spawn point instead of
--- chasing a stray pull out of the arena.
-M.boss_room_anchor = {
-    ['Boss_WT4_S2VampireLord']  = { x = -10.556, y = -10.419, z = -3.120 },
-    ['Boss_WT4_Duriel']         = { x =  -3.616, y =  -2.309, z = -3.689 },
-    ['Boss_WT3_PenitentKnight'] = { x =   2.005, y =   1.587, z =  2.000 },
-    ['Boss_WT4_PenitentKnight'] = { x =   2.005, y =   1.587, z =  2.000 },
-    ['Boss_WT4_Andariel']       = { x =   8.282, y =  -8.734, z = -6.223 },
-    ['Boss_WT4_MegaDemon']      = { x =   4.924, y =   5.308, z =  0.127 },
-    ['_Varshan']                = { x =  -3.280, y =  -3.194, z = -3.304 },
-    ['Boss_WT5_Harbinger']      = { x =   2.900, y =  15.000, z =  0.000 },
-}
+-- (boss_room_anchor table removed: walk_boss_room now uses
+--  tracker.altar_position, which interact_altar captures from the
+--  altar actor itself.  Per-boss hard-coded anchors had drift, became
+--  stale every season, and were redundant with the altar's own world
+--  position -- altars always sit at the centre of the fight area.)
 
 -- Reward-chest skin patterns.  Substring match -- chests can vary by
 -- WT / season but always start with one of these prefixes.
@@ -142,20 +133,6 @@ M.zone_matches = function (zone_name)
         if zone_name:find(p, 1, true) then return true end
     end
     return false
-end
-
--- Best anchor position for the current zone.  Falls back to (0,0,0) when
--- we don't have a hard-coded room (e.g. Belial / Butcher / new bosses).
--- Returns a vec3-shaped table; caller wraps in vec3 if needed.
-M.get_anchor = function (zone_name)
-    if not zone_name then return nil end
-    -- Direct hit
-    if M.boss_room_anchor[zone_name] then return M.boss_room_anchor[zone_name] end
-    -- Substring fallback (the _Varshan family + similar)
-    for prefix, pos in pairs(M.boss_room_anchor) do
-        if zone_name:find(prefix, 1, true) then return pos end
-    end
-    return nil
 end
 
 -- True when the actor's skin is the summon altar for the boss in this zone.

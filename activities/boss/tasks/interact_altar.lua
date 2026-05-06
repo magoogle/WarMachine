@@ -132,6 +132,13 @@ task.Execute = function ()
 
     local pp = lp:get_position()
     local ap = altar:get_position()
+    -- Latch the altar's world position the first time we see it so
+    -- walk_boss_room can use it as the in-arena tether anchor.  Latch-
+    -- once: if the altar actor jitters or relocates (it shouldn't, but
+    -- be defensive), we keep the original spawn position.
+    if not tracker.altar_position and ap then
+        tracker.altar_position = vec3:new(ap:x(), ap:y(), ap:z())
+    end
     local d  = math.sqrt((ap:x()-pp:x())^2 + (ap:y()-pp:y())^2)
     if d > INTERACT_RANGE_M then
         move.to_actor(altar)

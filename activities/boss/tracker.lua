@@ -12,6 +12,12 @@ local tracker = {
     altar_seen        = false,
     altar_activated   = false,
     altar_activate_t  = nil,
+    -- Captured at altar-sight time by interact_altar; used by
+    -- walk_boss_room as the in-arena tether anchor instead of a
+    -- hard-coded per-zone position.  Stays nil if we joined a run
+    -- mid-flight (altar already despawned) -- in that case
+    -- walk_boss_room is a no-op and kill_monster handles drift.
+    altar_position    = nil,
     chest_opened      = false,
     chest_opened_t    = nil,
     run_done          = false,
@@ -31,6 +37,7 @@ tracker.reset_run = function ()
     tracker.altar_seen        = false
     tracker.altar_activated   = false
     tracker.altar_activate_t  = nil
+    tracker.altar_position    = nil
     tracker.chest_opened      = false
     tracker.chest_opened_t    = nil
     tracker.run_done          = false

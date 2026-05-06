@@ -1,9 +1,15 @@
 -- activities/boss/tasks/walk_boss_room.lua
 --
 -- Anchor: when the altar's been activated but no enemy is in stream
--- AND no reward chest is visible, walk back toward the boss-room center
--- (boss_data.get_anchor for the current zone).  This keeps the bot
+-- AND no reward chest is visible, walk back toward the altar position
+-- captured by interact_altar (tracker.altar_position).  Keeps the bot
 -- inside the arena instead of drifting to wherever it landed.
+--
+-- Anchor is the altar's own world position rather than a hard-coded
+-- per-zone constant: every boss zone places the altar at the centre
+-- of the fight area, so it's a perfect free anchor with zero per-boss
+-- maintenance.  No anchor (e.g. joined a run mid-flight after the
+-- altar despawned) -> task no-ops and combat handles drift.
 --
 -- Same role as activities/hordes/tasks/walk_boss_room but for the
 -- boss-altar zones.  Lower priority than kill_monster -- combat
@@ -39,30 +45,26 @@ end
 
 task.shouldExecute = function ()
     if not tracker.altar_activated then return false end
+    if not tracker.altar_position  then return false end
     if any_chest_visible()         then return false end
     if any_enemy_in_range()        then return false end
-    -- Only useful when we have a known anchor for this zone.
-    local w = get_current_world()
-    local zone = w and w.get_current_zone_name and w:get_current_zone_name() or nil
-    return boss_data.get_anchor(zone) ~= nil
+    return true
 end
 
 task.Execute = function ()
     local lp = get_local_player()
     if not lp then return end
-    local w = get_current_world()
-    local zone = w and w.get_current_zone_name and w:get_current_zone_name() or nil
-    local anchor = boss_data.get_anchor(zone)
+    local anchor = tracker.altar_position
     if not anchor then task.status = 'no anchor'; return end
     local pp = lp:get_position()
-    local d  = math.sqrt((anchor.x-pp:x())^2 + (anchor.y-pp:y())^2)
+    local d  = math.sqrt((anchor:x() - pp:x())^2 + (anchor:y() - pp:y())^2)
     -- Already at anchor (within tether range)
     if d <= settings.boss_room_tether then
         task.status = string.format('at anchor (%.0fm)', d)
         return
     end
-    move.to_pos(vec3:new(anchor.x, anchor.y, anchor.z or pp:z()))
-    task.status = string.format('walking to boss-room anchor (%.0fm)', d)
+    move.to_pos(vec3:new(anchor:x(), anchor:y(), anchor:z() or pp:z()))
+    task.status = string.format('walking to altar anchor (%.0fm)', d)
 end
 
 return task
