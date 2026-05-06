@@ -84,9 +84,40 @@ local function reset_engagement()
     _engage_started_t = -math.huge
 end
 
+-- Yield to combat when adds are close.  Without this, interact_poi
+-- (top of helltide's task list, above kill_monster) keeps walking the
+-- player past Hellborne / Tortured Gift waves that just spawned, and
+-- the bot looks like it "ignored the ambush."  When an enemy is within
+-- this radius we return false from shouldExecute; kill_monster then
+-- claims the pulse, engages, and as soon as the area clears
+-- interact_poi takes back over for the walk.  Engagement-phase
+-- (within INTERACT_RADIUS of the POI) keeps priority since move.pause
+-- has already been called and we want the chest open animation to
+-- finish.
+local YIELD_RADIUS = 12.0   -- yards; covers melee + close ranged threats
+
+local function combat_nearby()
+    if not target_selector or not target_selector.get_near_target_list then
+        return false
+    end
+    local lp = get_local_player()
+    if not lp then return false end
+    local pp = lp:get_position()
+    if not pp then return false end
+    local enemies = target_selector.get_near_target_list(pp, YIELD_RADIUS)
+    return enemies and next(enemies) ~= nil
+end
+
 task.shouldExecute = function ()
     local q = poi_priority.build(tracker, settings, tracker.in_maiden)
-    return picker.pick(q) ~= nil
+    local target = picker.pick(q)
+    if not target then return false end
+    -- Mid-engagement (already at the POI, paused, animating) -- don't
+    -- yield, kill_monster's preempt would just stutter the open.
+    if _engaged_key then return true end
+    -- Walking phase: yield to nearby combat so kill_monster anchors us.
+    if combat_nearby() then return false end
+    return true
 end
 
 task.Execute = function ()
