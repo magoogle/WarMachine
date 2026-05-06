@@ -201,6 +201,11 @@ gui.elements = {
     warplan_auto_next_obj = cb(true,  'warplan_auto_next_obj'),
     warplan_auto_turn_in  = cb(true,  'warplan_auto_turn_in'),
     warplan_auto_select   = cb(true,  'warplan_auto_select'),
+    -- Activity filter: when OFF, the auto-selector skips any node whose
+    -- node_name() / node_reward_name() matches Nightmare Dungeon, picking
+    -- a different legal option instead.  Default OFF so NMDs are ignored
+    -- right now; flip ON later once NMDs are stable to opt back in.
+    warplan_allow_nightmare = cb(false, 'warplan_allow_nightmare_v1'),
     -- Drives "walk to Warplans_Vendor + open menu" whenever there is no
     -- active war plan and we're in Temis. This covers BOTH the fresh-enable
     -- case (start the very first cycle) AND post-turn-in looping. Default
@@ -407,7 +412,9 @@ gui.render = function ()
         gui.elements.warplan_auto_turn_in:render('Auto turn-in at Tyrael',
             'Walk to Tyrael and interact when WarPlans_QST_TurnIn_Rewards is active.')
         gui.elements.warplan_auto_select:render('Auto select activities',
-            'Run the click sequence when the WAR PLANS menu is open and no war plan is active.')
+            'Drive the WAR PLANS menu picker (via the warplan API) when the menu is open and no war plan is active.')
+        gui.elements.warplan_allow_nightmare:render('Allow Nightmare Dungeon plans',
+            'When OFF (default), auto-select skips Nightmare Dungeon nodes and picks a different legal option instead.  Turn ON to opt back in once NMDs are stable for you.')
         gui.elements.warplan_whisper_turn_in:render('Auto turn in Whispers',
             'When in town, walk to Tree/Raven and claim first reward ' ..
             'if any bounty is ready.  Piggyback only -- never teleports to ' ..

@@ -63,6 +63,11 @@ settings.update_settings = function ()
     settings.warplan.auto_turn_in       = gui.elements.warplan_auto_turn_in:get()
     settings.warplan.auto_select        = gui.elements.warplan_auto_select:get()
     settings.warplan.auto_cycle         = gui.elements.warplan_auto_cycle:get()
+    -- NMD opt-out (default off).  Read in tasks/warplan/test_select.lua
+    -- so the API picker can skip nightmare nodes.
+    settings.warplan.allow_nightmare    = gui.elements.warplan_allow_nightmare
+                                              and gui.elements.warplan_allow_nightmare:get()
+                                              or false
     settings.warplan.whisper_turn_in    = gui.elements.warplan_whisper_turn_in
                                               and gui.elements.warplan_whisper_turn_in:get()
                                               or false
