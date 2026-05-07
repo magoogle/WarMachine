@@ -199,42 +199,74 @@ end
 -- in find would hide candidates we should be walking toward.  The
 -- interactable check happens in Execute.
 --
+-- Detection range is UNCAPPED -- find.closest with no max_dist_sq
+-- scans the full actor stream.  The actual "range" limit is D4's
+-- stream radius (~60-80y), which is host-controlled and not
+-- adjustable from Lua.  Out-of-stream enticements only become
+-- findable once the player walks closer.
+--
 -- BUT we DO filter:
 --   * Actors marked in tracker.visited (consumed earlier this run)
 --   * Actors marked in _confirmed_consumed (we got close, saw the
 --     flag false, treated as consumed -- prevents walking to dead
 --     enticements still in stream)
 --   * Hearths past the cap
+--
+-- Returns the actor.  When debug_mode is on, also writes a one-line
+-- diagnostic so the operator can see which filter dropped which
+-- candidate (helps distinguish "out of stream" from "in stream but
+-- filtered").
 local function find_enticement()
-    return find.closest({
+    -- Diag counters when debug_mode is on.
+    local total, kept, drop_visited, drop_consumed, drop_cap =
+        0, 0, 0, 0, 0
+
+    local picked = find.closest({
         patterns             = ENTICEMENT_PATTERNS,
         require_interactable = false,
         source               = 'all',   -- switches/destructibles live in get_all_actors
         visited              = tracker.visited,
         visited_prefix       = 'enticement',
         filter               = function (a, p)
+            total = total + 1
             -- Skip "we already learned this one is consumed" -- bot got
             -- close, observed is_interactable=false, treats as done.
             local key = find.key_for('enticement', a, p)
-            if _confirmed_consumed[key] then return false end
+            if _confirmed_consumed[key] then
+                drop_consumed = drop_consumed + 1
+                return false
+            end
 
             -- Honor hearth cap; beacons are uncapped.
             local sn = a.get_skin_name and a:get_skin_name() or ''
             if is_hearth_skin(sn) and hearth_cap_reached() then
+                drop_cap = drop_cap + 1
                 return false
             end
 
-            -- (No is_dead filter.  The host's is_dead predicate is
-            -- defined on every game.object and its return value for
-            -- non-living world props -- switches, levers, hearths --
-            -- is unreliable: some hosts default it to true for objects
-            -- with no health, which silently filtered out every fresh
-            -- SpiritHearth_Switch.  The _confirmed_consumed close-range
-            -- check + tracker.visited cover the "already clicked" case
-            -- without the false-positive risk.)
+            kept = kept + 1
             return true
         end,
     })
+
+    if settings.debug_mode then
+        -- Tracker.visited drops happen INSIDE find.closest before
+        -- our filter sees them, so we can't count them precisely
+        -- here; report total observed via the patterns vs filter-kept.
+        local visited_count = 0
+        if tracker.visited then
+            for k, _ in pairs(tracker.visited) do
+                if k:sub(1, #'enticement:') == 'enticement:' then
+                    visited_count = visited_count + 1
+                end
+            end
+        end
+        console.print(string.format(
+            '[Undercity] enticement scan: kept=%d filter_drops{consumed=%d cap=%d} visited_in_tracker=%d (find returns %s)',
+            kept, drop_consumed, drop_cap, visited_count,
+            picked and (picked:get_skin_name() or '?') or 'nil'))
+    end
+    return picked
 end
 
 -- Public hook: clear the consumed map when the player changes zones,
