@@ -85,6 +85,16 @@ end
 -- stream produces a deadlock: enticements_pending says yes (no cap
 -- check) -> floor_portal yields -> interact_enticement yields (cap)
 -- -> nothing claims the pulse and the bot stops descending.
+-- Gate-timeout state for the "waiting for more enticements" hold.
+-- When the gate has been blocking for GATE_MAX_WAIT_S without any new
+-- enticement getting consumed (counter doesn't advance), we release
+-- it -- otherwise a floor that doesn't spawn enough enticements to
+-- meet `min_enticements_before_descent` would trap the bot forever
+-- (freeroam thrash + trap-detector loop in the live log).
+local GATE_MAX_WAIT_S = 30.0
+local _gate_block_since        = nil   -- monotonic seconds when block started
+local _gate_consumed_at_block  = 0     -- enticements_this_floor at that time
+
 local function enticements_pending()
     if settings.do_enticements == false then return false end
     if settings.speed_run and (tracker.hearth_count or 0) >= (settings.max_hearths or 4) then
@@ -94,12 +104,7 @@ local function enticements_pending()
     -- Per-floor minimum gate.  When > 0, descent is blocked until this
     -- many enticements have been consumed on the current floor, even if
     -- no more enticements are visible in stream.  Counter resets on
-    -- world_id change in update_world_tracking.  Hard-stop fallthrough:
-    -- if the user set min=8 but the floor only has 4 enticements
-    -- available, we'd block forever -- so we ALSO require that there be
-    -- at least one candidate in stream (next check below) before
-    -- gating.  When the floor genuinely runs out of enticements,
-    -- enticements_pending returns false and descent proceeds.
+    -- world_id change in update_world_tracking.
     local min_required = settings.min_enticements_before_descent or 0
     local consumed_this_floor = tracker.enticements_this_floor or 0
 
@@ -119,18 +124,52 @@ local function enticements_pending()
     })
 
     -- A live candidate ALONE blocks descent (existing behavior).
-    if cand ~= nil then return true end
-
-    -- No live candidate, but we haven't met the per-floor minimum AND
-    -- the user actively wants enticements.  This is the "wait, more
-    -- might stream in" case -- we hold the descent gate so the bot
-    -- has time to wander the floor and find more enticements.  Without
-    -- this hold, the bot would burn through the few enticements it
-    -- spawned with and immediately descend before later spawns
-    -- streamed in.
-    if min_required > 0 and consumed_this_floor < min_required then
+    -- Reset the gate-timeout tracker so the next "no candidate" round
+    -- starts a fresh wait window.
+    if cand ~= nil then
+        _gate_block_since        = nil
+        _gate_consumed_at_block  = consumed_this_floor
         return true
     end
+
+    -- No live candidate, but we haven't met the per-floor minimum AND
+    -- the user actively wants enticements.  Hold the descent gate so
+    -- the bot has time to wander the floor and find more enticements.
+    if min_required > 0 and consumed_this_floor < min_required then
+        local now = get_time_since_inject() or 0
+
+        -- First time we're blocking on the min-not-met path -- start
+        -- the timeout window.  Snapshot the current consumed count so
+        -- we can detect "we're making progress, reset timer."
+        if _gate_block_since == nil then
+            _gate_block_since        = now
+            _gate_consumed_at_block  = consumed_this_floor
+        elseif consumed_this_floor > _gate_consumed_at_block then
+            -- We HAVE consumed something since the block started.
+            -- That's progress -- reset the timer; gate stays active
+            -- pending the next consume.
+            _gate_block_since        = now
+            _gate_consumed_at_block  = consumed_this_floor
+        elseif (now - _gate_block_since) >= GATE_MAX_WAIT_S then
+            -- Stuck waiting too long with no progress.  Give up on
+            -- the min and let descent proceed -- the floor probably
+            -- doesn't have enough enticements to satisfy the cap.
+            if settings.debug_mode then
+                console.print(string.format(
+                    '[Undercity] enticement gate timed out after %.0fs ' ..
+                    '(consumed %d/%d); proceeding to descent',
+                    GATE_MAX_WAIT_S, consumed_this_floor, min_required))
+            end
+            _gate_block_since       = nil
+            _gate_consumed_at_block = 0
+            return false
+        end
+        return true
+    end
+
+    -- Min met (or off).  Reset gate state and release.
+    _gate_block_since       = nil
+    _gate_consumed_at_block = 0
     return false
 end
 
@@ -144,12 +183,14 @@ local function update_world_tracking()
         -- New floor -- reset visited dedup + per-target click state +
         -- per-floor enticement counter (so the
         -- min_enticements_before_descent gate enforces per-floor, not
-        -- per-session).
+        -- per-session) + gate-timeout state.
         tracker.visited                 = {}
         tracker.poi_cache               = nil
         tracker.enticements_this_floor  = 0
         task.last_click_t               = nil
         task.click_count                = 0
+        _gate_block_since               = nil
+        _gate_consumed_at_block         = 0
     end
     tracker.last_world_id = wid
 end

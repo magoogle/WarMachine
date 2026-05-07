@@ -77,8 +77,16 @@ local COMBAT_YIELD_RANGE_M = 15.0
 --
 -- Anchor expires after ANCHOR_MAX_HOLD_S as a safety net so a stuck
 -- mob (off-mesh, behind a wall) can't trap us forever.
+--
+-- ANCHOR_MIN_HOLD_S is a *minimum* hold time regardless of mob
+-- presence -- the wave doesn't always spawn instantly after the
+-- click, and the user-reported "anchor didn't hold long enough" was
+-- the anchor releasing in the 1-2 second window before D4 had
+-- spawned a single mob.  With the min hold, the anchor sticks around
+-- even if `any_enemy_near_anchor` initially returns false.
 local _post_consume_anchor = nil   -- { x, y, set_t }
 local ANCHOR_CLEAR_RANGE_M = 10.0
+local ANCHOR_MIN_HOLD_S    = 5.0
 local ANCHOR_MAX_HOLD_S    = 30.0
 
 -- Returns true if any hostile is within `radius` of (ax, ay).  Uses
@@ -246,14 +254,24 @@ task.shouldExecute = function ()
     -- (don't pick a new target) until the spawned mob wave is dead.
     -- "Dead" = no hostile within ANCHOR_CLEAR_RANGE_M of the anchor
     -- position.  Anchor expires after ANCHOR_MAX_HOLD_S so a stuck /
-    -- off-mesh mob can't pin us forever.
+    -- off-mesh mob can't pin us forever.  Also enforces a minimum
+    -- hold of ANCHOR_MIN_HOLD_S regardless of mob presence -- the
+    -- wave doesn't always spawn instantly, and the early-release-on-
+    -- empty-stream was the user-reported "didn't anchor long enough
+    -- to kill everything within 10y" bug.
     if _post_consume_anchor then
-        local now = get_time_since_inject() or 0
-        if (now - _post_consume_anchor.set_t) > ANCHOR_MAX_HOLD_S then
+        local now     = get_time_since_inject() or 0
+        local elapsed = now - _post_consume_anchor.set_t
+        if elapsed > ANCHOR_MAX_HOLD_S then
             if settings.debug_mode then
                 console.print('[Undercity] anchor timed out, releasing')
             end
             _post_consume_anchor = nil
+        elseif elapsed < ANCHOR_MIN_HOLD_S then
+            -- Within minimum hold window.  Yield regardless of mob
+            -- presence so the wave has time to spawn + the bot stays
+            -- pinned to the anchor instead of wandering off.
+            return false
         elseif any_enemy_near_anchor(
                   _post_consume_anchor.x, _post_consume_anchor.y,
                   ANCHOR_CLEAR_RANGE_M) then
@@ -261,8 +279,12 @@ task.shouldExecute = function ()
             -- mobs near the anchor.  We'll reclaim once they're dead.
             return false
         else
-            -- Mobs cleared near anchor.  Release it; the next claim
-            -- below will pick the next-closest enticement.
+            -- Past min hold, no enemies near anchor.  Release it; the
+            -- next claim below will pick the next-closest enticement.
+            if settings.debug_mode then
+                console.print(string.format(
+                    '[Undercity] anchor cleared after %.1fs', elapsed))
+            end
             _post_consume_anchor = nil
         end
     end
