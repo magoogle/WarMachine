@@ -319,11 +319,39 @@ local function _reset_consumed_for_zone()
     _confirmed_consumed = {}
 end
 
+-- Nav-pause guard: if the task is releasing the pulse for any reason
+-- but we previously paused the nav (move.pause() on enticement
+-- arrival), we MUST resume the nav before yielding -- otherwise the
+-- nav stays paused forever and the bot gets stranded standing on the
+-- enticement.  Live-log symptom: bot clicked hearth, miniboss
+-- spawned, boss_seen flipped, shouldExecute yielded, nav stayed
+-- paused=true, bot frozen until the user manually moved the
+-- character.  Idempotent.
+local function _release_nav_if_engaged()
+    if task.target_key and move.is_paused and move.is_paused() then
+        move.resume()
+    end
+    -- Also drop the engagement state so a future shouldExecute
+    -- (e.g. boss kill clears boss_seen, or settings.do_enticements
+    -- gets toggled) doesn't try to resume the dead engagement.
+    if task.target_key then
+        task.target_key    = nil
+        task.target_pos    = nil
+        task.target_skin   = nil
+        task.interact_time = nil
+        task.last_click_t  = nil
+        task.click_count   = nil
+    end
+end
+
 task.shouldExecute = function ()
-    if not is_in_undercity() then return false end
-    if settings.do_enticements == false then return false end
-    if tracker.boss_seen then return false end       -- focus boss once visible
-    if settings.speed_run == true and hearth_cap_reached() then return false end
+    if not is_in_undercity() then _release_nav_if_engaged(); return false end
+    if settings.do_enticements == false then _release_nav_if_engaged(); return false end
+    if tracker.boss_seen then _release_nav_if_engaged(); return false end
+    if settings.speed_run == true and hearth_cap_reached() then
+        _release_nav_if_engaged()
+        return false
+    end
 
     -- POST-CONSUME ANCHOR.  After clicking an enticement, hold here
     -- (don't pick a new target) until the spawned mob wave is dead.
@@ -372,7 +400,15 @@ task.shouldExecute = function ()
     -- it claims the pulse, fights, and when the wave is dead its
     -- shouldExecute returns false again, letting interact_enticement
     -- reclaim and walk to the next target.
-    if find.any_enemy_in_range(COMBAT_YIELD_RANGE_M) then return false end
+    --
+    -- Release nav (if we paused it) but KEEP the engagement state so
+    -- we can resume the click loop on the same hearth after the wave
+    -- dies.  The dead-engagement clear at the top is for permanent
+    -- yields (boss_seen, settings off); this is a transient yield.
+    if find.any_enemy_in_range(COMBAT_YIELD_RANGE_M) then
+        if move.is_paused and move.is_paused() then move.resume() end
+        return false
+    end
 
     return find_enticement() ~= nil
 end

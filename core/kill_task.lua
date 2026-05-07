@@ -70,6 +70,15 @@ M.make = function (cfg)
     local extra_should       = cfg.extra_should
     local target_hijack      = cfg.target_hijack
     local boss_patterns      = cfg.boss_skin_patterns
+    -- Skin substrings that, when present, EXCLUDE the actor from
+    -- triggering the boss_seen latch -- even if D4's host
+    -- is_boss(actor) returns true.  Used to ignore miniboss-class
+    -- spawns (e.g. enticement-wave summons in undercity) that the
+    -- host flags as is_boss=true but are NOT the floor's real boss.
+    -- Without this, picking up a miniboss flips boss_seen and
+    -- shuts down enticement / interact_poi / floor_portal etc.
+    -- Empty by default; activities opt in by passing patterns.
+    local boss_neg_patterns  = cfg.boss_skin_negative_patterns
     local boss_seen_field    = cfg.boss_seen_field or 'boss_seen'
     local debug_label        = cfg.debug_label or '?'
 
@@ -121,6 +130,19 @@ M.make = function (cfg)
         if tracker and not tracker[boss_seen_field] then
             local boss_match = target_module.is_boss(enemy)
                 or (boss_patterns and looks_like(skin, boss_patterns))
+            -- Negative-pattern exclusion: even if is_boss()=true or
+            -- a positive pattern matched, drop the latch trigger
+            -- when the skin matches an excluded substring (e.g.
+            -- "Miniboss").  D4 flags miniboss-class wave spawns as
+            -- is_boss=true, but they're not THE floor boss --
+            -- letting them flip the latch shuts down the activity's
+            -- enticement / POI / floor-portal flow even though the
+            -- run isn't actually at the boss room yet.
+            if boss_match and boss_neg_patterns
+               and looks_like(skin, boss_neg_patterns)
+            then
+                boss_match = false
+            end
             if boss_match then
                 tracker[boss_seen_field] = true
                 tracker[boss_seen_field .. '_at'] = get_time_since_inject() or 0
