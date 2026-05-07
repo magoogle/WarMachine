@@ -171,26 +171,69 @@ local function hearth_cap_reached()
     return (tracker.hearth_count or 0) >= (settings.max_hearths or 4)
 end
 
--- Re-find the actor we were last engaged with by skin+coord key.
--- D4 REMOVES the SpiritHearth_Switch / SpiritBeacon_Switch actor from
--- the stream entirely once it's consumed (it doesn't just flip
+-- Re-find the actor we were last engaged with.  D4 REMOVES the
+-- SpiritHearth_Switch / SpiritBeacon_Switch actor from the stream
+-- entirely once it's consumed (it doesn't just flip
 -- is_interactable=false).  So the actor's absence from the stream
--- IS the success signal -- if find_actor_by_key returns nil while
--- we have an active engagement, the click landed.
-local function find_actor_by_key(key)
-    if not key or not actors_manager or not actors_manager.get_all_actors then
+-- is one signal of success -- but only when we KNOW we previously
+-- clicked (see _on_consumed's click-count guard).
+--
+-- Match is TOLERANT (not exact key match) because:
+--   * D4 sometimes appends/strips `_Dyn` etc. on the skin between
+--     pulses -- exact-skin compare miss-fires when the suffix
+--     changes mid-engagement.
+--   * Actor position can jitter +/-0.5y across an integer boundary
+--     and the previous floor(x):floor(y) key match would fail.
+--   * With multiple hearths in close proximity the user reported
+--     the bot losing track when the player moved past the engaged
+--     one -- exact-key tracking lost the original.
+--
+-- New matcher: skin SUBSTRING (canonical core, ignoring _Dyn /
+-- numeric suffixes) AND world position within MATCH_RADIUS yards
+-- of the cached target_pos.
+local MATCH_RADIUS = 2.5
+local function _skin_core(s)
+    if not s then return nil end
+    local lower = s:lower()
+    while true do
+        local trimmed = lower:gsub('_dyn$', ''):gsub('_%d+$', '')
+        if trimmed == lower then break end
+        lower = trimmed
+    end
+    return lower
+end
+
+local function find_engaged_actor()
+    local pos  = task.target_pos
+    local skin = task.target_skin
+    if not pos or not skin or not actors_manager
+       or not actors_manager.get_all_actors
+    then
         return nil
     end
+    local target_core = _skin_core(skin)
+    local best, best_d2 = nil, MATCH_RADIUS * MATCH_RADIUS
     for _, a in pairs(actors_manager:get_all_actors()) do
         local sn = a.get_skin_name and a:get_skin_name() or nil
         if sn then
-            local p = a.get_position and a:get_position() or nil
-            if p and find.key_for('enticement', a, p) == key then
-                return a
+            local core = _skin_core(sn)
+            -- Symmetric substring match -- runtime suffix variance
+            -- works either direction.
+            if core and (core:find(target_core, 1, true)
+                      or target_core:find(core, 1, true))
+            then
+                local p = a.get_position and a:get_position() or nil
+                if p then
+                    local dx, dy = p:x() - pos.x, p:y() - pos.y
+                    local d2 = dx*dx + dy*dy
+                    if d2 < best_d2 then
+                        best, best_d2 = a, d2
+                    end
+                end
             end
         end
     end
-    return nil
+    return best
 end
 
 -- Find the closest enticement we haven't interacted with yet.
@@ -373,6 +416,26 @@ local function _on_consumed(now)
     task.click_count   = nil
 end
 
+-- Drop the engagement WITHOUT crediting a consume.  Used when we
+-- think the actor has left the stream but we never even fired a
+-- click -- almost certainly a tracking glitch (suffix change,
+-- position jitter, multi-hearth confusion) rather than a real
+-- consume.  Re-pick on the next pulse.
+local function _drop_engagement_uncredited(reason)
+    if settings.debug_mode then
+        console.print(string.format(
+            '[Undercity] dropped engagement on %s without credit (clicks=%d, %s)',
+            task.target_skin or '?', task.click_count or 0, reason or 'no reason'))
+    end
+    move.resume()
+    task.target_key    = nil
+    task.target_pos    = nil
+    task.target_skin   = nil
+    task.interact_time = nil
+    task.last_click_t  = nil
+    task.click_count   = nil
+end
+
 task.Execute = function ()
     local lp = get_local_player()
     if not lp then return end
@@ -382,15 +445,32 @@ task.Execute = function ()
 
     -- ----------------------------------------------------------------
     -- Step 1: if we have an active engagement, check whether the
-    -- engaged actor is still in the actor stream.  Disappearance ==
-    -- consumed (D4 removes the actor entirely once activated, NOT
-    -- just flipping is_interactable=false -- per user observation).
+    -- engaged actor is still in the actor stream.  Two outcomes when
+    -- the engaged actor is GONE:
+    --
+    --   * clicks > 0 -> we actually fired clicks; absence is a real
+    --     consume.  Fire success path.
+    --   * clicks == 0 -> we never clicked; the actor is "missing"
+    --     because the matcher lost track (skin suffix flicker,
+    --     position jitter, multi-actor close cluster, etc.).  This
+    --     is a tracking bug, NOT a real consume -- crediting it
+    --     burned through hearths in the user's log without any
+    --     activation actually happening.  Drop the engagement
+    --     uncredited and let find_enticement re-pick next pulse.
+    --
+    -- Match is tolerant (skin core + position within MATCH_RADIUS),
+    -- not exact key -- see find_engaged_actor docstring.
     -- ----------------------------------------------------------------
     if task.target_key then
-        local engaged = find_actor_by_key(task.target_key)
+        local engaged = find_engaged_actor()
         if not engaged then
-            _on_consumed(now)
-            task.status = 'activated ' .. (task.target_skin or 'enticement')
+            if (task.click_count or 0) > 0 then
+                _on_consumed(now)
+                task.status = 'activated ' .. (task.target_skin or 'enticement')
+            else
+                _drop_engagement_uncredited('actor lost before any click')
+                task.status = 're-picking enticement'
+            end
             return
         end
         -- Engaged actor still in stream.  Continue the walk/click
@@ -402,7 +482,7 @@ task.Execute = function ()
     -- Step 2: pick a target.  Prefer the engaged actor (continuity);
     -- otherwise pick the next closest unvisited enticement.
     -- ----------------------------------------------------------------
-    local actor = task.target_key and find_actor_by_key(task.target_key)
+    local actor = task.target_key and find_engaged_actor()
                   or find_enticement()
     if not actor then
         task.interact_time = nil
@@ -492,7 +572,7 @@ task.Execute = function ()
     -- once an enticement is activated -- it doesn't just flip
     -- is_interactable=false.  So the actor's disappearance from the
     -- stream is the success signal (handled at the top of Execute via
-    -- find_actor_by_key).  We click on cooldown REGARDLESS of the
+    -- find_engaged_actor).  We click on cooldown REGARDLESS of the
     -- is_interactable flag -- D4's host treats interact_object on a
     -- non-interactable actor as a no-op, and the click stops being
     -- wasted as soon as the actor flips interactable on close approach.
