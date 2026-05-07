@@ -290,8 +290,8 @@ gui.elements = {
 
     -- Undercity entry click point (Undercity Obelisk tribute UI -> Open Portal)
     undercity_auto_enter         = cb(true, 'undercity_auto_enter'),
-    undercity_cp_open_portal_x   = si(0, 3840, 0, 'undercity_cp_open_portal_x'),
-    undercity_cp_open_portal_y   = si(0, 2160, 0, 'undercity_cp_open_portal_y'),
+    undercity_cp_open_portal_x   = si(0, 3840,  471, 'undercity_cp_open_portal_x'),
+    undercity_cp_open_portal_y   = si(0, 2160, 1299, 'undercity_cp_open_portal_y'),
     undercity_show_click_points  = cb(false,    'undercity_show_click_points'),
 
     -- Pit entry settings. ArkhamAsylum standalone uses the legacy Cerrigar
