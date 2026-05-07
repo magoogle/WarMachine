@@ -123,7 +123,21 @@ local task = {
     click_count    = nil,
 }
 
-local INTERACT_RANGE = 3.0
+-- Range bands for the walk-vs-click decision.  Two-band design avoids
+-- the "ping-pong" failure mode the user-reported on a live run:
+--   click #1 fires at d=2.something, post-click drift puts us at
+--   d=3.3y (just outside the 3y click range), Execute hits the WALK
+--   branch, walks to arrive_radius=3 (still 3y), drifts again, walks
+--   again, never re-enters click range, never fires click #2.
+--
+-- WALK_TO_RANGE is the arrive_radius for the walk -- we approach to
+-- WELL INSIDE the click window so jitter doesn't push us back out.
+-- INTERACT_RANGE is the click-engages threshold -- looser than the
+-- walk target so a small drift outside the walk arrival doesn't
+-- immediately re-trigger walk mode.  The hysteresis (WALK < CLICK)
+-- is what prevents the ping-pong.
+local INTERACT_RANGE = 5.0
+local WALK_TO_RANGE  = 1.5
 
 -- Substring patterns checked against actor skin names (lowercase).
 -- Generous: short catch-all substrings double as defense against
@@ -563,7 +577,11 @@ task.Execute = function ()
         -- Make sure nav isn't paused from a prior arrival on a
         -- different enticement.
         if move.is_paused and move.is_paused() then move.resume() end
-        move.to_pos({ x = p:x(), y = p:y(), z = p:z() }, INTERACT_RANGE)
+        -- Walk to WALK_TO_RANGE (1.5y), well inside INTERACT_RANGE
+        -- (5y).  See the band comment near the constants -- the
+        -- hysteresis prevents post-click drift from kicking us back
+        -- into walk mode and starving the click loop.
+        move.to_pos({ x = p:x(), y = p:y(), z = p:z() }, WALK_TO_RANGE)
         task.status = string.format('walking to %s (%.0fm)', sn, d)
         return
     end

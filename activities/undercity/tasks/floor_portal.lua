@@ -51,7 +51,12 @@ local WARP_PAD_PATTERNS = {
     'warp_pad',
     'warppad',
 }
-local INTERACT_RANGE   = 3.0
+-- Two-band approach for the same hysteresis reason as
+-- interact_enticement: walk to a tight WALK_TO_RANGE so post-arrival
+-- drift doesn't push us back outside the click range and starve the
+-- click loop in a walk-then-drift ping-pong.
+local INTERACT_RANGE   = 5.0
+local WALK_TO_RANGE    = 1.5
 local CLICK_COOLDOWN_S = 1.0
 
 -- Substring patterns for any beacon/hearth that would block descent.
@@ -294,7 +299,7 @@ task.Execute = function ()
         -- pulse and the bot oscillates 18-20y away forever.  long_path
         -- forces a complete A* route through the detour.
         move.to_pos({ x = sp:x(), y = sp:y(), z = sp:z() }, {
-            arrive_radius = INTERACT_RANGE - 0.5,
+            arrive_radius = WALK_TO_RANGE,
             long_path     = true,
         })
         task.status = string.format('walking to switch (%.0fm)', d)
