@@ -36,6 +36,21 @@ local PORTAL_PATTERNS = {
     'portalswitch',
     'portal_switch',
 }
+-- The "WarpPad" is a separate, BIGGER actor the player visually stands
+-- on -- not interactable.  PortalSwitch (the actual click target) is
+-- a smaller actor that sits on/near the WarpPad and often isn't in
+-- the actor stream until the player walks close to the WarpPad.
+-- WonderCity's working pattern (tasks/portal.lua):
+--     1. find PortalSwitch -- if interactable + close, click it
+--     2. else navigate to WarpPad to bring PortalSwitch into stream
+-- Without WarpPad routing the bot couldn't path to a not-yet-streamed
+-- PortalSwitch, freeroam-thrashed near the descent area, and never
+-- descended -- the user-reported "stuck on warp pad" symptom.
+local WARP_PAD_PATTERNS = {
+    'undercity_warppad',
+    'warp_pad',
+    'warppad',
+}
 local INTERACT_RANGE   = 3.0
 local CLICK_COOLDOWN_S = 1.0
 
@@ -52,6 +67,23 @@ local BLOCKING_PATTERNS = {
 local function in_undercity()
     local z = zone.current()
     return z and z:sub(1, #'X1_Undercity_') == 'X1_Undercity_' or false
+end
+
+local function find_warp_pad()
+    -- WarpPad is a navigation BEACON: bigger, visible, often in stream
+    -- when the smaller PortalSwitch isn't yet.  Walking to it brings
+    -- the PortalSwitch into stream so the click loop can engage.
+    -- Same entry-portal exclusion as find_switch (post-descent the
+    -- back-WarpPad streams in too).
+    return find.closest({
+        patterns             = WARP_PAD_PATTERNS,
+        require_interactable = false,
+        source               = 'all',
+        visited              = nil,
+        filter               = function (a)
+            return not entry_portal.is_actor_near_entry(a)
+        end,
+    })
 end
 
 local function find_switch()
@@ -205,17 +237,51 @@ task.shouldExecute = function ()
         end
         return false
     end
-    return find_switch() ~= nil
+    -- Fire when EITHER actor is in stream.  WarpPad routes us toward
+    -- the descent area so PortalSwitch streams in; PortalSwitch is
+    -- the actual click target.
+    return find_switch() ~= nil or find_warp_pad() ~= nil
 end
 
 task.Execute = function ()
     local lp = get_local_player()
     if not lp then return end
-    local switch = find_switch()
-    if not switch then task.status = 'no switch'; return end
     local pp = lp:get_position()
+    if not pp then return end
+    local switch = find_switch()
+
+    -- ----------------------------------------------------------------
+    -- Phase 0: PortalSwitch not yet in stream -- navigate to WarpPad
+    -- to bring it in.  WarpPad is the BIG visible pad on the floor;
+    -- PortalSwitch is the small interactable that sits on/near it.
+    -- This mirrors WonderCity's working flow.  Without this fallback
+    -- the bot couldn't path to the switch and freeroam-thrashed near
+    -- the descent area.
+    -- ----------------------------------------------------------------
+    if not switch then
+        local pad = find_warp_pad()
+        if not pad then task.status = 'no switch / no warp pad'; return end
+        local pad_p = pad:get_position()
+        if not pad_p then task.status = 'no warp-pad position'; return end
+        local pad_d = math.sqrt((pad_p:x()-pp:x())^2 + (pad_p:y()-pp:y())^2)
+        if pad_d > 2.0 then
+            move.to_pos({ x = pad_p:x(), y = pad_p:y(), z = pad_p:z() }, {
+                arrive_radius = 1.5,
+                long_path     = true,
+            })
+            task.status = string.format('walking to warp pad (%.0fm)', pad_d)
+            return
+        end
+        -- We're ON the pad but the switch hasn't streamed in yet.
+        -- Stand still; D4 should populate the actor stream within a
+        -- frame or two and the next pulse will find the switch.
+        move.pause()
+        task.status = 'on warp pad, waiting for switch stream'
+        return
+    end
+
     local sp = switch:get_position()
-    if not pp or not sp then return end
+    if not sp then task.status = 'no switch position'; return end
     local d = math.sqrt((sp:x()-pp:x())^2 + (sp:y()-pp:y())^2)
 
     if d > INTERACT_RANGE then
@@ -225,10 +291,8 @@ task.Execute = function ()
         -- returns short partial routes (4-7 nodes ~ 8-15y), and when
         -- the warp pad sits past geometry the player needs to detour
         -- around, the partial paths end up FURTHER from the goal each
-        -- pulse and the bot oscillates 18-20y away forever.  Per the
-        -- live trap-detector log: bbox 18.5x4.9 over 30s, never
-        -- crossing.  long_path forces a complete A* route through the
-        -- detour, so the walker actually reaches the switch.
+        -- pulse and the bot oscillates 18-20y away forever.  long_path
+        -- forces a complete A* route through the detour.
         move.to_pos({ x = sp:x(), y = sp:y(), z = sp:z() }, {
             arrive_radius = INTERACT_RANGE - 0.5,
             long_path     = true,

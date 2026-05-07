@@ -32,19 +32,6 @@ local find     = require 'core.find'
 local settings = require 'activities.undercity.settings'
 local tracker  = require 'activities.undercity.tracker'
 
--- Module-level "known consumed" map.  When Execute walks the player
--- into close range of an enticement and observes is_interactable=false
--- there, the actor was either consumed (most likely) or it's a
--- broken / mis-classified prop.  Either way, we shouldn't walk to it
--- again -- caching the key here lets find_enticement filter it out
--- BEFORE picking it as a target on the next pulse.  (tracker.visited
--- is checked inside find.closest, so we layer onto that without
--- mutating it directly -- visited is consumer-shared and filling it
--- with non-confirmed entries would pollute interact_poi's view.)
---
--- Cleared on zone change via tracker.zone_changed callback (see below).
-local _confirmed_consumed = {}
-
 -- D4 streams enticements as non-interactable when the player is far
 -- away.  We can only safely declare "consumed" once we've been close
 -- enough that the flag should have flipped to true if it were going
@@ -249,11 +236,19 @@ end
 -- findable once the player walks closer.
 --
 -- BUT we DO filter:
---   * Actors marked in tracker.visited (consumed earlier this run)
---   * Actors marked in _confirmed_consumed (we got close, saw the
---     flag false, treated as consumed -- prevents walking to dead
---     enticements still in stream)
---   * Hearths past the cap
+--   * Actors marked in tracker.visited (consumed earlier this run --
+--     reset on floor change in floor_portal.update_world_tracking
+--     and on run reset in tracker.reset_run).
+--   * Hearths past the cap.
+--
+-- (A previous module-local `_confirmed_consumed` set duplicated
+-- tracker.visited but never reset on run / floor change -- across
+-- runs it filtered out actors at coords that happened to collide
+-- with prior-run consumes, while floor_portal.enticements_pending
+-- (which doesn't share that set) still saw the actor as pending.
+-- Result: floor_portal blocked descent on a candidate that
+-- interact_enticement couldn't engage -> stuck waiting forever.
+-- tracker.visited alone is the single source of truth now.)
 --
 -- Returns the actor.  When debug_mode is on, also writes a one-line
 -- diagnostic so the operator can see which filter dropped which
@@ -261,8 +256,7 @@ end
 -- filtered").
 local function find_enticement()
     -- Diag counters when debug_mode is on.
-    local total, kept, drop_visited, drop_consumed, drop_cap =
-        0, 0, 0, 0, 0
+    local kept, drop_cap = 0, 0
 
     local picked = find.closest({
         patterns             = ENTICEMENT_PATTERNS,
@@ -271,22 +265,12 @@ local function find_enticement()
         visited              = tracker.visited,
         visited_prefix       = 'enticement',
         filter               = function (a, p)
-            total = total + 1
-            -- Skip "we already learned this one is consumed" -- bot got
-            -- close, observed is_interactable=false, treats as done.
-            local key = find.key_for('enticement', a, p)
-            if _confirmed_consumed[key] then
-                drop_consumed = drop_consumed + 1
-                return false
-            end
-
             -- Honor hearth cap; beacons are uncapped.
             local sn = a.get_skin_name and a:get_skin_name() or ''
             if is_hearth_skin(sn) and hearth_cap_reached() then
                 drop_cap = drop_cap + 1
                 return false
             end
-
             kept = kept + 1
             return true
         end,
@@ -305,18 +289,11 @@ local function find_enticement()
             end
         end
         console.print(string.format(
-            '[Undercity] enticement scan: kept=%d filter_drops{consumed=%d cap=%d} visited_in_tracker=%d (find returns %s)',
-            kept, drop_consumed, drop_cap, visited_count,
+            '[Undercity] enticement scan: kept=%d filter_drops{cap=%d} visited_in_tracker=%d (find returns %s)',
+            kept, drop_cap, visited_count,
             picked and (picked:get_skin_name() or '?') or 'nil'))
     end
     return picked
-end
-
--- Public hook: clear the consumed map when the player changes zones,
--- since on a fresh enter every enticement is potentially fresh again.
--- runner / tracker can call this if they wire it up; harmless if not.
-local function _reset_consumed_for_zone()
-    _confirmed_consumed = {}
 end
 
 -- Nav-pause guard: if the task is releasing the pulse for any reason
@@ -423,7 +400,6 @@ local function _on_consumed(now)
     if key then
         tracker.visited = tracker.visited or {}
         tracker.visited[key] = true
-        _confirmed_consumed[key] = true
     end
     if p then
         _post_consume_anchor = { x = p.x, y = p.y, set_t = now }
