@@ -15,6 +15,14 @@ local M = {
     enticement_timeout = 4,       -- s; stop waiting at a hearth after this
     beacon_timeout    = 8,        -- s; longer window for beacons (event triggers)
 
+    -- Minimum enticements (hearths + beacons) to consume on each floor
+    -- before floor_portal will descend.  0 = no minimum (default).  When
+    -- > 0, even if no more enticements are visible in stream, descent is
+    -- blocked until tracker.enticements_this_floor reaches this value --
+    -- pairs with do_enticements to enforce "always cap orbs before
+    -- moving on" without needing the user to babysit the run.
+    min_enticements_before_descent = 0,
+
     -- Run pacing
     auto_reset_after  = 600,
     exit_after_chest  = true,
@@ -45,6 +53,8 @@ M.update = function ()
     M.auto_reset_after  = bget('uc_auto_reset_after',  600)
     M.exit_after_chest  = bget('uc_exit_after_chest',  true)
     M.speed_run         = bget('uc_speed_run',         false)
+    M.min_enticements_before_descent =
+        bget('uc_min_enticements_before_descent', 0)
     M.debug_mode        = bget('debug_mode',           false)
 end
 

@@ -22,8 +22,15 @@ local tracker = {
     chest_looted_t           = nil,    -- monotonic seconds when flipped done;
                                        -- exit gates on core.exit_grace from this.
 
-    -- SpiritHearth_Switch interaction cap (vs unlimited beacons)
+    -- SpiritHearth_Switch interaction cap (vs unlimited beacons).
+    -- Session-wide accumulator -- enforces settings.max_hearths.
     hearth_count             = 0,
+    -- Per-floor enticement counter (hearths + beacons combined).
+    -- Reset by floor_portal.update_world_tracking on world_id change
+    -- so the min-enticements-before-descent gate is enforced PER
+    -- floor, not per session.  interact_enticement increments this
+    -- whenever an enticement is observed consumed.
+    enticements_this_floor   = 0,
 
     -- Run lifecycle
     run_start_t              = nil,
@@ -41,6 +48,7 @@ tracker.reset_run = function ()
     tracker.chest_looted   = false
     tracker.chest_looted_t = nil
     tracker.hearth_count   = 0
+    tracker.enticements_this_floor = 0
     tracker.run_start_t    = get_time_since_inject and get_time_since_inject() or 0
     tracker.current_task   = { name = 'idle', status = 'idle' }
 end

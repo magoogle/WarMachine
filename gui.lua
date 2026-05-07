@@ -154,6 +154,8 @@ gui.elements = {
     uc_boss_intro_delay            = si(0,   30,    3, 'uc_boss_intro_delay'),
     uc_max_hearths                 = si(0,    8,    4, 'uc_max_hearths'),
     uc_enticement_timeout          = si(2,   20,    4, 'uc_enticement_timeout'),
+    uc_min_enticements_before_descent =
+                                     si(0,    8,    0, 'uc_min_enticements_before_descent'),
     uc_auto_reset_after            = si(120,1800,  600,'uc_auto_reset_after'),
 
     -- ---- NMD activity settings ----
@@ -539,6 +541,12 @@ gui.render = function ()
         gui.elements.uc_do_enticements:render('Use enticements', 'Spirit beacons + hearths (mid-run elite triggers)')
         gui.elements.uc_max_hearths:render('Max SpiritHearth interactions', 'Cap on hearths per run (beacons unlimited)')
         gui.elements.uc_enticement_timeout:render('Enticement timeout (s)', 'How long to wait at each beacon/hearth')
+        gui.elements.uc_min_enticements_before_descent:render(
+            'Min enticements before descent',
+            'Block the floor portal until at least this many enticements ' ..
+            '(hearths + beacons combined) have been consumed on the current ' ..
+            'floor.  0 = no minimum (descend whenever no more enticements ' ..
+            'are visible).  Counter resets per floor.')
         render_menu_header('Run lifecycle')
         gui.elements.uc_exit_after_chest:render('Exit after chest', 'Warp out / reset after the attunement chest is looted')
         gui.elements.uc_speed_run:render('Speed run',

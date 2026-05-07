@@ -163,6 +163,28 @@ local function hearth_cap_reached()
     return (tracker.hearth_count or 0) >= (settings.max_hearths or 4)
 end
 
+-- Re-find the actor we were last engaged with by skin+coord key.
+-- D4 REMOVES the SpiritHearth_Switch / SpiritBeacon_Switch actor from
+-- the stream entirely once it's consumed (it doesn't just flip
+-- is_interactable=false).  So the actor's absence from the stream
+-- IS the success signal -- if find_actor_by_key returns nil while
+-- we have an active engagement, the click landed.
+local function find_actor_by_key(key)
+    if not key or not actors_manager or not actors_manager.get_all_actors then
+        return nil
+    end
+    for _, a in pairs(actors_manager:get_all_actors()) do
+        local sn = a.get_skin_name and a:get_skin_name() or nil
+        if sn then
+            local p = a.get_position and a:get_position() or nil
+            if p and find.key_for('enticement', a, p) == key then
+                return a
+            end
+        end
+    end
+    return nil
+end
+
 -- Find the closest enticement we haven't interacted with yet.
 -- Crucially: NO is_interactable filter at the find layer -- the
 -- actor flips that flag only on close approach, so filtering on it
@@ -258,18 +280,84 @@ task.shouldExecute = function ()
     return find_enticement() ~= nil
 end
 
+-- Fire the success path for a previously-engaged enticement that has
+-- disappeared from the actor stream.  Uses cached pos/skin since the
+-- live actor is gone.  Idempotent: clears all engagement state.
+local function _on_consumed(now)
+    local key = task.target_key
+    local p   = task.target_pos
+    local sn  = task.target_skin or '?'
+    if key then
+        tracker.visited = tracker.visited or {}
+        tracker.visited[key] = true
+        _confirmed_consumed[key] = true
+    end
+    if p then
+        _post_consume_anchor = { x = p.x, y = p.y, set_t = now }
+    end
+    if is_hearth_skin(sn) then
+        tracker.hearth_count = (tracker.hearth_count or 0) + 1
+    end
+    tracker.enticements_this_floor = (tracker.enticements_this_floor or 0) + 1
+    if orbwalker and orbwalker.set_clear_toggle then
+        orbwalker.set_clear_toggle(true)
+    end
+    if settings.debug_mode then
+        console.print(string.format(
+            '[Undercity] enticement consumed (actor removed): %s ' ..
+            '(clicks=%d, hearth_count=%d, floor=%d)',
+            sn, task.click_count or 0,
+            tracker.hearth_count or 0,
+            tracker.enticements_this_floor or 0))
+    end
+    move.resume()
+    task.target_key    = nil
+    task.target_pos    = nil
+    task.target_skin   = nil
+    task.interact_time = nil
+    task.last_click_t  = nil
+    task.click_count   = nil
+end
+
 task.Execute = function ()
     local lp = get_local_player()
     if not lp then return end
     local pp = lp:get_position()
     if not pp then return end
+    local now = get_time_since_inject() or 0
 
-    local actor = find_enticement()
+    -- ----------------------------------------------------------------
+    -- Step 1: if we have an active engagement, check whether the
+    -- engaged actor is still in the actor stream.  Disappearance ==
+    -- consumed (D4 removes the actor entirely once activated, NOT
+    -- just flipping is_interactable=false -- per user observation).
+    -- ----------------------------------------------------------------
+    if task.target_key then
+        local engaged = find_actor_by_key(task.target_key)
+        if not engaged then
+            _on_consumed(now)
+            task.status = 'activated ' .. (task.target_skin or 'enticement')
+            return
+        end
+        -- Engaged actor still in stream.  Continue the walk/click
+        -- loop on it.  We re-use the `engaged` reference below so we
+        -- never operate on a stale object.
+    end
+
+    -- ----------------------------------------------------------------
+    -- Step 2: pick a target.  Prefer the engaged actor (continuity);
+    -- otherwise pick the next closest unvisited enticement.
+    -- ----------------------------------------------------------------
+    local actor = task.target_key and find_actor_by_key(task.target_key)
+                  or find_enticement()
     if not actor then
         task.interact_time = nil
         task.last_click_t  = nil
         task.click_count   = nil
         task.target_key    = nil
+        task.target_pos    = nil
+        task.target_skin   = nil
+        move.resume()
         task.status = 'no enticement'
         return
     end
@@ -280,11 +368,14 @@ task.Execute = function ()
     local d  = find.dist2d(pp, p)
 
     -- If the find returned a DIFFERENT actor than last pulse, reset the
-    -- timers so the new target gets a fresh window.  Otherwise the old
-    -- target's clicks would count against the new one.
+    -- timers so the new target gets a fresh window.  Snapshot the
+    -- pos+skin onto the task so the success path can reference them
+    -- after the live actor disappears from the stream.
     local cur_key = find.key_for('enticement', actor, p)
     if task.target_key ~= cur_key then
         task.target_key    = cur_key
+        task.target_pos    = { x = p:x(), y = p:y(), z = p:z() }
+        task.target_skin   = sn
         task.interact_time = nil
         task.last_click_t  = nil
         task.click_count   = nil
@@ -309,115 +400,67 @@ task.Execute = function ()
             console.print('[Undercity] enticement timeout, skipping: ' .. sn)
         end
         task.interact_time = nil
+        -- Release the nav so freeroam / other tasks can take over.
+        move.resume()
         task.status = 'timeout, skipped ' .. sn
         return
     end
 
-    -- Walk phase: too far, move toward the actor via nav.
-    -- We use move.to_pos() rather than move.to_actor() because D4 ignores
+    -- Walk phase: too far, move toward the actor via nav.  We use
+    -- move.to_pos() rather than move.to_actor() because D4 ignores
     -- interact_object() on actors that aren't yet interactable -- Spirit
-    -- Hearths and Beacons report is_interactable=false until the player is
-    -- close, so move.to_actor (= interact_object) is silently dropped and
-    -- the bot never moves.  move.to_pos drives nav to the actor's
+    -- Hearths and Beacons report is_interactable=false until the player
+    -- is close, so move.to_actor (= interact_object) is silently dropped
+    -- and the bot never moves.  move.to_pos drives nav to the actor's
     -- world position, which works regardless of interactable state.
     if d > INTERACT_RANGE then
-        -- Early-confirm-consumed check.  By CONFIRMED_RANGE_M (8y) the
-        -- bot has been "approaching" long enough for D4 to flip
-        -- is_interactable=true if the actor were available.  If it's
-        -- still false at that range, treat as consumed and don't waste
-        -- the rest of the walk.  Skips the actor for the rest of the
-        -- session via _confirmed_consumed (find_enticement also checks
-        -- tracker.visited so we mirror to both).
-        if d <= CONFIRMED_RANGE_M
-           and (not actor.is_interactable or not actor:is_interactable())
-        then
-            local key = find.key_for('enticement', actor, p)
-            _confirmed_consumed[key] = true
-            tracker.visited = tracker.visited or {}
-            tracker.visited[key] = true
-            if settings.debug_mode then
-                console.print(string.format(
-                    '[Undercity] enticement already consumed (close-range non-interactable): %s @ (%.0f,%.0f)',
-                    sn, p:x(), p:y()))
-            end
-            task.target_key    = nil
-            task.interact_time = nil
-            task.last_click_t  = nil
-            task.click_count   = nil
-            task.status = 'skipped consumed: ' .. sn
-            return
-        end
-
+        -- Make sure nav isn't paused from a prior arrival on a
+        -- different enticement.
+        if move.is_paused and move.is_paused() then move.resume() end
         move.to_pos({ x = p:x(), y = p:y(), z = p:z() }, INTERACT_RANGE)
         task.status = string.format('walking to %s (%.0fm)', sn, d)
         return
     end
 
-    -- Arrived.  Stop the walker so we don't drift past the actor.
+    -- Arrived.  PAUSE the nav (sticky) so the explorer's frontier
+    -- picker doesn't grab a new target the moment we stop calling
+    -- move.to_pos.  Without this, the nav reports "reached" the
+    -- enticement, the internal explorer immediately picks a 28y
+    -- frontier, and the player gets dragged away mid-click -- the
+    -- user-reported "click #1, then walks off, click #2 misses,
+    -- timeout" symptom.  move.resume() is called on every exit path
+    -- below (consume / timeout / target-changed).
+    move.pause()
     local wok, walker = pcall(require, 'core.walker')
     if wok and walker and walker.stop then walker.stop() end
 
-    -- Click phase.  Retry-until-dead: keep firing interact_object on a
-    -- cooldown until the actor's is_interactable() flips false (=
-    -- consumed/dead) OR we hit the timeout (= probably stuck).  We do
-    -- NOT mark visited on click -- only on success (no longer
-    -- interactable) or timeout.  User-reported: clicks were sometimes
-    -- silently rejected, and the previous "mark visited on click" path
-    -- moved past the beacon without retrying.
-    local now = get_time_since_inject() or 0
-    if actor.is_interactable and actor:is_interactable() then
-        -- Still interactable -> click again on cooldown.
-        local CLICK_COOLDOWN_S = 1.0
-        if (now - (task.last_click_t or 0)) >= CLICK_COOLDOWN_S then
-            if orbwalker and orbwalker.set_clear_toggle then
-                orbwalker.set_clear_toggle(false)
-            end
-            interact_object(actor)
-            task.last_click_t = now
-            task.click_count  = (task.click_count or 0) + 1
-            -- Start the timeout window on the FIRST click (so a hung
-            -- non-interactable transition doesn't get billed against
-            -- a fresh approach).
-            task.interact_time = task.interact_time or now
-            if settings.debug_mode then
-                console.print(string.format(
-                    '[Undercity] click #%d on %s', task.click_count, sn))
-            end
+    -- Click loop.  Per user direction: D4 REMOVES the actor entirely
+    -- once an enticement is activated -- it doesn't just flip
+    -- is_interactable=false.  So the actor's disappearance from the
+    -- stream is the success signal (handled at the top of Execute via
+    -- find_actor_by_key).  We click on cooldown REGARDLESS of the
+    -- is_interactable flag -- D4's host treats interact_object on a
+    -- non-interactable actor as a no-op, and the click stops being
+    -- wasted as soon as the actor flips interactable on close approach.
+    local CLICK_COOLDOWN_S = 1.0
+    if (now - (task.last_click_t or 0)) >= CLICK_COOLDOWN_S then
+        if orbwalker and orbwalker.set_clear_toggle then
+            orbwalker.set_clear_toggle(false)
         end
-        task.status = string.format('clicking %s (#%d)',
-            sn, task.click_count or 0)
-        return
+        interact_object(actor)
+        task.last_click_t = now
+        task.click_count  = (task.click_count or 0) + 1
+        -- Start the timeout window on the FIRST click so a hung
+        -- non-interactable transition doesn't get billed against a
+        -- fresh approach.
+        task.interact_time = task.interact_time or now
+        if settings.debug_mode then
+            console.print(string.format(
+                '[Undercity] click #%d on %s', task.click_count, sn))
+        end
     end
-
-    -- Actor is no longer interactable -> success!  This is the canonical
-    -- "consumed" signal regardless of whether our last click or some
-    -- other event finished it.  Mark visited + module-level consumed,
-    -- accumulate the hearth count, restore orbwalker, AND set the
-    -- post-consume anchor so the room gets cleared before we move on.
-    local consumed_key = find.key_for('enticement', actor, p)
-    tracker.visited = tracker.visited or {}
-    tracker.visited[consumed_key] = true
-    _confirmed_consumed[consumed_key] = true
-    _post_consume_anchor = {
-        x     = p:x(),
-        y     = p:y(),
-        set_t = get_time_since_inject() or 0,
-    }
-    if is_hearth_skin(sn) then
-        tracker.hearth_count = (tracker.hearth_count or 0) + 1
-    end
-    if orbwalker and orbwalker.set_clear_toggle then
-        orbwalker.set_clear_toggle(true)
-    end
-    if settings.debug_mode then
-        console.print(string.format(
-            '[Undercity] enticement consumed: %s (clicks=%d, hearth_count=%d)',
-            sn, task.click_count or 0, tracker.hearth_count or 0))
-    end
-    task.interact_time = nil
-    task.last_click_t  = nil
-    task.click_count   = nil
-    task.status = 'activated ' .. sn
+    task.status = string.format('clicking %s (#%d)',
+        sn, task.click_count or 0)
 end
 
 return task

@@ -206,8 +206,8 @@ local main_pulse = function ()
         -- close, rotation runs at full power.
         --
         -- See core/rotation_bridge.lua for the contract; the rotation
-        -- side reads _G.WARMACHINE_TRAVEL_MODE and gates non-self_cast
-        -- spell casts on it.  6y matches "melee engagement starting"
+        -- side reads _G.EXTERNAL_ROTATION_TRAVEL_MODE and gates non-
+        -- self_cast spell casts on it.  6y matches "melee engagement starting"
         -- range -- ranged combat fires past it but at melee range we
         -- want the full kit available.
         local TRAVEL_THRESHOLD_M = 6

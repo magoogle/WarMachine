@@ -245,8 +245,8 @@ task.Execute = function ()
         return
     end
     -- Tell UniversalRotation which actor we're engaging.  UR reads
-    -- _G.WARMACHINE_TARGET in its spell loop and casts at it when valid,
-    -- which keeps the bot's facing aligned with our walk target.  Without
+    -- _G.EXTERNAL_ROTATION_TARGET in its spell loop and casts at it when
+    -- valid, which keeps the bot's facing aligned with our walk target.  Without
     -- this, UR would spam the closest plain monster while WarMachine is
     -- walking toward a 30y Soulspire and the bot would constantly turn
     -- around mid-walk to face the closer target.

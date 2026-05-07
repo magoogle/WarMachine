@@ -197,14 +197,14 @@ end
 -- whether this returns non-nil.
 M.pick = function (opts)
     local lp = get_local_player()
-    if not lp then _G.WARMACHINE_TARGET = nil; return nil end
+    if not lp then _G.EXTERNAL_ROTATION_TARGET = nil; return nil end
     local pp = (get_player_position and get_player_position()) or lp:get_position()
-    if not pp then _G.WARMACHINE_TARGET = nil; return nil end
+    if not pp then _G.EXTERNAL_ROTATION_TARGET = nil; return nil end
     if not target_selector or not target_selector.get_near_target_list then
-        _G.WARMACHINE_TARGET = nil; return nil end
+        _G.EXTERNAL_ROTATION_TARGET = nil; return nil end
     local range = opts and opts.range or 25
     local enemies = target_selector.get_near_target_list(pp, range)
-    if not enemies then _G.WARMACHINE_TARGET = nil; return nil end
+    if not enemies then _G.EXTERNAL_ROTATION_TARGET = nil; return nil end
 
     local now = get_time_since_inject() or 0
 
@@ -317,7 +317,7 @@ M.pick = function (opts)
                 -- next call will pick a different target.
                 if key then _unreachable[key] = now + UNREACHABLE_TTL_S end
                 _pursuit = nil
-                _G.WARMACHINE_TARGET = nil
+                _G.EXTERNAL_ROTATION_TARGET = nil
                 return nil
             end
             -- Made progress -- update the start_d snapshot so the
@@ -332,15 +332,16 @@ M.pick = function (opts)
     else
         _pursuit = nil
     end
-    -- Publish the chosen target to UniversalRotation via _G.WARMACHINE_TARGET
-    -- so its spell loop casts at OUR pick instead of its own closest-mob
-    -- selection.  Without this, UR was firing at whichever monster the
-    -- enemy stream put first, and orbwalker's facing followed UR's cast,
-    -- yanking the bot's heading away from the structure / elite WarMachine
-    -- was walking toward.  Set/clear directly (no require) to keep
-    -- core/target free of a bridge import.  picked may be nil here
-    -- (empty enemies list / all filtered) -- nil clears the override.
-    _G.WARMACHINE_TARGET = picked
+    -- Publish the chosen target to UniversalRotation via
+    -- _G.EXTERNAL_ROTATION_TARGET so its spell loop casts at OUR pick
+    -- instead of its own closest-mob selection.  Without this, UR was
+    -- firing at whichever monster the enemy stream put first, and
+    -- orbwalker's facing followed UR's cast, yanking the bot's heading
+    -- away from the structure / elite WarMachine was walking toward.
+    -- Set/clear directly (no require) to keep core/target free of a
+    -- bridge import.  picked may be nil here (empty enemies list / all
+    -- filtered) -- nil clears the override.
+    _G.EXTERNAL_ROTATION_TARGET = picked
     return picked
 end
 
