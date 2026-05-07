@@ -244,34 +244,33 @@ task.Execute = function ()
     local wok, walker = pcall(require, 'core.walker')
     if wok and walker and walker.stop then walker.stop() end
 
-    -- Retry the click on cooldown until is_interactable() flips false
-    -- (= consumed -> world transition pending).  The single-shot
-    -- interact_object() call sometimes silently fails (host-side input
-    -- timing) -- the user-reported "standing on the warp pad but not
-    -- activating it" symptom.
+    -- Click loop.  User-reported pattern: "We have to be on it,
+    -- standstill, and try interacting a few times".  D4's
+    -- is_interactable() flag for the PortalSwitch flickers false
+    -- on close approach (same way the enticement switches do), and
+    -- the prior `if interactable then click` gate would silently
+    -- skip clicks while the bot stood on the pad waiting for the
+    -- flag.  Per the matching enticement fix: just hammer
+    -- interact_object on the cooldown -- D4 no-ops the click when
+    -- the actor isn't ready, and the click lands as soon as it is.
     local now = get_time_since_inject() or 0
-    local interactable = switch.is_interactable and switch:is_interactable()
-    if interactable then
-        if not task.last_click_t or (now - task.last_click_t) >= CLICK_COOLDOWN_S then
-            if orbwalker and orbwalker.set_clear_toggle then
-                orbwalker.set_clear_toggle(false)
-            end
-            interact_object(switch)
-            task.last_click_t   = now
-            task.last_interact_t = now
-            task.click_count    = (task.click_count or 0) + 1
-            if settings.debug_mode then
-                console.print(string.format(
-                    '[Undercity] portal click #%d on %s',
-                    task.click_count, switch:get_skin_name() or '?'))
-            end
+    if not task.last_click_t or (now - task.last_click_t) >= CLICK_COOLDOWN_S then
+        if orbwalker and orbwalker.set_clear_toggle then
+            orbwalker.set_clear_toggle(false)
         end
-        task.status = string.format('descending (#%d)', task.click_count or 0)
-        return
+        interact_object(switch)
+        task.last_click_t    = now
+        task.last_interact_t = now
+        task.click_count     = (task.click_count or 0) + 1
+        if settings.debug_mode then
+            console.print(string.format(
+                '[Undercity] portal click #%d on %s (interactable=%s)',
+                task.click_count,
+                switch:get_skin_name() or '?',
+                tostring(switch.is_interactable and switch:is_interactable())))
+        end
     end
-
-    -- Switch is no longer interactable -> world transition is in flight.
-    task.status = 'descending'
+    task.status = string.format('descending (#%d)', task.click_count or 0)
 end
 
 return task
